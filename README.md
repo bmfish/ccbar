@@ -28,7 +28,14 @@ macOS 13+ 自带 Swift，直接编译即可。
 
 ### 方式二：直接下载
 
-从 [Releases](https://github.com/bmfish/ccbar/releases) 下载 `ccBar.app`，拖入 `/Applications` 即可。
+### 安装
+- **推荐**：下载 `ccBar-1.0.0-arm64.dmg`，双击打开，拖入 Applications
+- 或下载 `ccBar.zip` 解压后放入 Applications
+
+首次打开如果提示"已损坏"，在终端运行：
+```bash
+sudo xattr -r -d com.apple.quarantine /Applications/ccBar.app
+```
 
 ## 使用
 
