@@ -15,7 +15,7 @@ class Settings {
     }
 
     var warningThreshold: Int {
-        get { defaults.integer(forKey: "warningThreshold") == 0 ? 500000 : defaults.integer(forKey: "warningThreshold") }
+        get { defaults.integer(forKey: "warningThreshold") == 0 ? 50 : defaults.integer(forKey: "warningThreshold") }
         set { defaults.set(newValue, forKey: "warningThreshold") }
     }
 
@@ -116,9 +116,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
-        // 初始图标
-        updateIcon()
-
         // 初始数据库连接
         connectDB()
 
@@ -182,6 +179,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.title = "未找到"
         }
 
+        // 不设置图标，只显示数字
+        statusItem.button?.image = nil
+
         // 更新菜单
         updateMenu()
     }
@@ -189,8 +189,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func queryDayStats(days: Int) -> (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)? {
         guard let db = db else { return nil }
 
+        // 计算时间范围（本地时间）
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let startTimestamp = Int64(startOfDay.timeIntervalSince1970)
+
         var stmt: OpaquePointer?
         let sql: String
+        var bindValue: Int64?
 
         if days == 0 {
             // 今日
@@ -202,10 +208,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 COALESCE(SUM(cache_creation_tokens), 0) as cache_create,
                 COALESCE(SUM(cache_read_tokens), 0) as cache_read
             FROM proxy_request_logs
-            WHERE datetime(created_at, 'unixepoch', 'localtime') >= date('now')
+            WHERE created_at >= ?
             """
+            bindValue = startTimestamp
         } else if days == 1 {
             // 昨日
+            let yesterdayStart = calendar.date(byAdding: .day, value: -1, to: startOfDay)!
             sql = """
             SELECT
                 COUNT(*) as reqs,
@@ -214,11 +222,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 COALESCE(SUM(cache_creation_tokens), 0) as cache_create,
                 COALESCE(SUM(cache_read_tokens), 0) as cache_read
             FROM proxy_request_logs
-            WHERE datetime(created_at, 'unixepoch', 'localtime') >= date('now', '-1 day')
-            AND datetime(created_at, 'unixepoch', 'localtime') < date('now')
+            WHERE created_at >= ? AND created_at < ?
             """
+            // 需要绑定两个值，在下面处理
+            bindValue = Int64(yesterdayStart.timeIntervalSince1970)
         } else {
             // 近N天
+            let startDate = calendar.date(byAdding: .day, value: -days, to: startOfDay)!
             sql = """
             SELECT
                 COUNT(*) as reqs,
@@ -227,12 +237,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 COALESCE(SUM(cache_creation_tokens), 0) as cache_create,
                 COALESCE(SUM(cache_read_tokens), 0) as cache_read
             FROM proxy_request_logs
-            WHERE datetime(created_at, 'unixepoch', 'localtime') >= date('now', '-\(days) days')
+            WHERE created_at >= ?
             """
+            bindValue = Int64(startDate.timeIntervalSince1970)
         }
 
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
             return nil
+        }
+
+        if let value = bindValue {
+            sqlite3_bind_int64(stmt, 1, value)
+        }
+
+        // 对于昨日查询，需要绑定第二个参数
+        if days == 1 {
+            sqlite3_bind_int64(stmt, 2, startTimestamp)
         }
 
         var result: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?
@@ -254,6 +274,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func queryModelBreakdown() -> [(model: String, input: Int64, output: Int64, total: Int64)]? {
         guard let db = db else { return nil }
 
+        // 计算今天的开始时间（本地时间）
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let startTimestamp = Int64(startOfDay.timeIntervalSince1970)
+
         var stmt: OpaquePointer?
         let sql = """
         SELECT
@@ -262,7 +287,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             COALESCE(SUM(output_tokens), 0) as output,
             COALESCE(SUM(input_tokens + output_tokens), 0) as total
         FROM proxy_request_logs
-        WHERE datetime(created_at, 'unixepoch', 'localtime') >= date('now')
+        WHERE created_at >= ?
         GROUP BY model
         ORDER BY total DESC
         LIMIT 5
@@ -271,6 +296,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
             return nil
         }
+
+        sqlite3_bind_int64(stmt, 1, startTimestamp)
 
         var breakdown: [(model: String, input: Int64, output: Int64, total: Int64)] = []
 
@@ -289,16 +316,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func queryWorkHours() -> String? {
         guard let db = db else { return nil }
 
+        // 计算今天的开始时间（本地时间）
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let startTimestamp = Int64(startOfDay.timeIntervalSince1970)
+
         var stmt: OpaquePointer?
         let sql = """
         SELECT MIN(created_at)
         FROM proxy_request_logs
-        WHERE datetime(created_at, 'unixepoch', 'localtime') >= date('now')
+        WHERE created_at >= ?
         """
 
         guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
             return nil
         }
+
+        sqlite3_bind_int64(stmt, 1, startTimestamp)
 
         var result: String?
 
@@ -307,7 +341,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if timestamp > 0 {
                 let startDate = Date(timeIntervalSince1970: TimeInterval(timestamp))
                 let hours = Date().timeIntervalSince(startDate) / 3600
-                if hours > 0 && hours < 24 {
+                if hours > 0 {
                     result = String(format: "%.1f", hours)
                 }
             }
@@ -320,25 +354,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func checkWarning(stats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)) {
         guard settings.warningEnabled else { return }
 
-        // 检查是否超过阈值
-        if stats.total >= Int64(settings.warningThreshold) {
-            // 检查是否已经通知过（避免重复通知）
-            let now = Date()
-            if let lastDate = lastNotificationDate,
-               now.timeIntervalSince(lastDate) < 3600 {
-                return // 1小时内不重复通知
-            }
+        // 检查今天是否已经通知过
+        let todayKey = "warningNotified_\(DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none))"
+        if UserDefaults.standard.bool(forKey: todayKey) {
+            return // 今天已通知过
+        }
 
+        // 检查是否超过阈值（阈值单位是万，需要乘以10000）
+        let thresholdInTokens = Int64(settings.warningThreshold) * 10000
+        if stats.total >= thresholdInTokens {
             // 发送通知
-            sendNotification(total: stats.total)
-            lastNotificationDate = now
+            sendNotification(total: stats.total, threshold: thresholdInTokens)
+            // 标记今天已通知
+            UserDefaults.standard.set(true, forKey: todayKey)
         }
     }
 
-    func sendNotification(total: Int64) {
+    func sendNotification(total: Int64, threshold: Int64) {
         let notification = NSUserNotification()
-        notification.title = "⚠️ 用量预警"
-        notification.informativeText = "今日 Token 用量已达 \(fmtK(total))，超过预警阈值 \(fmtK(Int64(settings.warningThreshold)))"
+        notification.title = "用量预警"
+        notification.informativeText = "今日 Token 用量已达 \(fmtK(total))，超过预警阈值 \(settings.warningThreshold)万"
         notification.soundName = NSUserNotificationDefaultSoundName
 
         NSUserNotificationCenter.default.deliver(notification)
@@ -385,17 +420,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func updateMenu() {
         let menu = NSMenu()
 
+        // 设置菜单使用深色模式以提高对比度
+        menu.appearance = NSAppearance(named: .darkAqua)
+
+        // 创建带样式的菜单项（使用白色字体）
+        func createMenuItem(_ title: String) -> NSMenuItem {
+            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            let attributes: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.white,
+                .font: NSFont.menuFont(ofSize: 0)
+            ]
+            item.attributedTitle = NSAttributedString(string: title, attributes: attributes)
+            return item
+        }
+
         // 随机问候语
         let greeting = greetings.randomElement() ?? "ccSwitch 用量统计"
-        let greetingItem = NSMenuItem(title: greeting, action: nil, keyEquivalent: "")
-        greetingItem.isEnabled = false
+        let greetingItem = createMenuItem(greeting)
         menu.addItem(greetingItem)
         menu.addItem(.separator())
 
         // 今日统计
         if let stats = DataCache.shared.getCachedToday() {
-            let todayTotal = NSMenuItem(title: "📊 今日 Token: \(fmtK(stats.total))", action: nil, keyEquivalent: "")
-            todayTotal.isEnabled = false
+            let todayTotal = createMenuItem("📊 今日 Token: \(fmtK(stats.total))")
             menu.addItem(todayTotal)
 
             // 对比昨日
@@ -403,33 +450,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let change = Double(stats.total - yesterday.total) / Double(yesterday.total) * 100
                 let emoji = change >= 0 ? "📈" : "📉"
                 let changeStr = String(format: "%+.1f%%", change)
-                let compareItem = NSMenuItem(title: "  \(emoji) 较昨日 \(changeStr)", action: nil, keyEquivalent: "")
-                compareItem.isEnabled = false
+                let compareItem = createMenuItem("  \(emoji) 较昨日 \(changeStr)")
                 menu.addItem(compareItem)
             }
 
-            let todayReqs = NSMenuItem(title: "  🔢 请求: \(stats.reqs)次", action: nil, keyEquivalent: "")
-            todayReqs.isEnabled = false
+            let todayReqs = createMenuItem("  🔢 请求: \(stats.reqs)次")
             menu.addItem(todayReqs)
 
-            let todayInput = NSMenuItem(title: "  📥 输入: \(fmtK(stats.input))", action: nil, keyEquivalent: "")
-            todayInput.isEnabled = false
+            let todayInput = createMenuItem("  📥 输入: \(fmtK(stats.input))")
             menu.addItem(todayInput)
 
-            let todayOutput = NSMenuItem(title: "  📤 输出: \(fmtK(stats.output))", action: nil, keyEquivalent: "")
-            todayOutput.isEnabled = false
+            let todayOutput = createMenuItem("  📤 输出: \(fmtK(stats.output))")
             menu.addItem(todayOutput)
 
             // 工作时长
             if let hours = queryWorkHours() {
-                let hoursItem = NSMenuItem(title: "  ⏱️ 工作时长: \(hours)小时", action: nil, keyEquivalent: "")
-                hoursItem.isEnabled = false
+                let hoursItem = createMenuItem("  ⏱️ 工作时长: \(hours)h")
                 menu.addItem(hoursItem)
             }
         } else {
             if FileManager.default.fileExists(atPath: settings.dbPath) {
-                let noData = NSMenuItem(title: "📊 今日暂无数据", action: nil, keyEquivalent: "")
-                noData.isEnabled = false
+                let noData = createMenuItem("📊 今日暂无数据")
                 menu.addItem(noData)
             } else {
                 let noDB = NSMenuItem(title: "🌶️ 未找到数据源，请去设置", action: #selector(openSettings), keyEquivalent: "")
@@ -441,14 +482,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 模型分布
         if let models = DataCache.shared.getCachedModelBreakdown(), !models.isEmpty {
-            let modelTitle = NSMenuItem(title: "🤖 模型分布", action: nil, keyEquivalent: "")
-            modelTitle.isEnabled = false
+            let modelTitle = createMenuItem("🤖 模型分布")
             menu.addItem(modelTitle)
 
             for model in models.prefix(3) {
                 let modelName = model.model.count > 20 ? String(model.model.prefix(20)) + "..." : model.model
-                let modelItem = NSMenuItem(title: "  \(modelName): \(fmtK(model.total))", action: nil, keyEquivalent: "")
-                modelItem.isEnabled = false
+                let modelItem = createMenuItem("  \(modelName): \(fmtK(model.total))")
                 menu.addItem(modelItem)
             }
 
@@ -457,15 +496,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 近7天统计
         if let stats = DataCache.shared.getCachedWeek() {
-            let weekItem = NSMenuItem(title: "📅 近7天 Token: \(fmtK(stats.total))", action: nil, keyEquivalent: "")
-            weekItem.isEnabled = false
+            let weekItem = createMenuItem("📅 近7天 Token: \(fmtK(stats.total))")
             menu.addItem(weekItem)
         }
 
         // 近30天统计
         if let stats = DataCache.shared.getCachedMonth() {
-            let monthItem = NSMenuItem(title: "📆 近30天 Token: \(fmtK(stats.total))", action: nil, keyEquivalent: "")
-            monthItem.isEnabled = false
+            let monthItem = createMenuItem("📆 近30天 Token: \(fmtK(stats.total))")
             menu.addItem(monthItem)
         }
 
@@ -475,6 +512,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let copyItem = NSMenuItem(title: "📋 复制今日统计", action: #selector(copyStats), keyEquivalent: "c")
         copyItem.keyEquivalentModifierMask = [.command]
         menu.addItem(copyItem)
+
+        // 刷新
+        let refreshItem = NSMenuItem(title: "🔄 刷新", action: #selector(refreshData), keyEquivalent: "r")
+        refreshItem.keyEquivalentModifierMask = [.command]
+        menu.addItem(refreshItem)
 
         // 设置
         let settingsItem = NSMenuItem(title: "⚙️ 设置", action: #selector(openSettings), keyEquivalent: ",")
@@ -487,6 +529,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(quitItem)
 
         statusItem.menu = menu
+    }
+
+    @objc func refreshData() {
+        updateData()
     }
 
     func fmtK(_ n: Int64) -> String {
@@ -626,7 +672,7 @@ class SettingsWindowController: NSWindowController {
         y -= 25
 
         // 用量预警阈值
-        let warningLabel = NSTextField(labelWithString: "预警阈值 (Token):")
+        let warningLabel = NSTextField(labelWithString: "预警阈值 (万):")
         warningLabel.frame = NSRect(x: 20, y: y, width: 120, height: 22)
         contentView.addSubview(warningLabel)
 
