@@ -3,7 +3,7 @@
 clear
 echo ""
 echo "  ┌─────────────────────────────────────────────┐"
-echo "  │     ccBar.app 一键启动                      │"
+echo "  │     ccBar.app 安装并启动                    │"
 echo "  └─────────────────────────────────────────────┘"
 echo ""
 
@@ -13,30 +13,34 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # 杀掉可能卡住的进程
 pkill -f ccswitch-bar 2>/dev/null
 
-# 移除隔离属性
-xattr -cr "$SCRIPT_DIR/ccBar.app" 2>/dev/null
+# 复制到 Applications（覆盖旧版本）
+echo "  正在安装到 /Applications..."
+rm -rf /Applications/ccBar.app
+cp -R "$SCRIPT_DIR/ccBar.app" /Applications/
 
-echo "  正在启动 ccBar..."
+# 移除隔离属性
+xattr -cr /Applications/ccBar.app 2>/dev/null
+
+echo "  ✅ 安装完成"
 echo ""
 
-# 直接启动 DMG 里的 app
-open "$SCRIPT_DIR/ccBar.app"
+# 启动
+echo "  正在启动 ccBar..."
+open /Applications/ccBar.app
 
 sleep 2
 
-# 检查是否启动成功
 if pgrep -f ccswitch-bar > /dev/null; then
     echo "  ✅ ccBar 已启动！"
-    echo ""
-    echo "  请查看菜单栏右上角 ⚡ 图标"
+    echo "  菜单栏右上角 ⚡ 图标"
 else
-    echo "  ⚠️  正在尝试备用方式..."
-    "$SCRIPT_DIR/ccBar.app/Contents/MacOS/ccswitch-bar" &
+    echo "  ⚠️  尝试备用方式..."
+    /Applications/ccBar.app/Contents/MacOS/ccswitch-bar &
     sleep 1
     echo "  ✅ 已启动"
 fi
 
 echo ""
-echo "  可以关闭此窗口了"
+echo "  以后在启动台或应用程序中直接打开 ccBar 即可"
 echo ""
 read -p "  按回车键退出..."
