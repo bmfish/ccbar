@@ -19,7 +19,7 @@ macOS 菜单栏 Token 用量监控工具，为 [CC Switch](https://github.com/ni
 ### 方式一：源码编译
 
 ```bash
-git clone https://github.com/<your-username>/ccBar.git
+git clone https://github.com/bmfish/ccbar.git
 cd ccBar
 ./install.sh
 ```
@@ -28,7 +28,7 @@ cd ccBar
 
 ### 方式二：直接下载
 
-从 [Releases](https://github.com/<your-username>/ccBar/releases) 下载 `ccBar.app`，拖入 `/Applications` 即可。
+从 [Releases](https://github.com/bmfish/ccbar/releases) 下载 `ccBar.app`，拖入 `/Applications` 即可。
 
 ## 使用
 
