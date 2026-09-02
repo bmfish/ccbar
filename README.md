@@ -24,7 +24,7 @@ cd ccBar
 ./install.sh
 ```
 
-需要 Xcode Command Line Tools（`xcode-select --install`）。
+macOS 13+ 自带 Swift，直接编译即可。
 
 ### 方式二：直接下载
 
