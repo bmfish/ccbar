@@ -1,3 +1,6 @@
 .DS_Store
 *.app
+*.dmg
+*.pkg
+*.zip
 ccswitch-bar
