@@ -340,7 +340,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             model,
             COALESCE(SUM(input_tokens), 0) as input,
             COALESCE(SUM(output_tokens), 0) as output,
-            COALESCE(SUM(input_tokens + output_tokens), 0) as total
+            COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total
         FROM proxy_request_logs
         WHERE created_at >= ?
         GROUP BY model
@@ -530,6 +530,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let todayReqs = createMenuItem("  🔢 请求: \(stats.reqs)次")
             menu.addItem(todayReqs)
 
+            // 缓存命中率
+            let totalInput = stats.input + stats.cacheCreate + stats.cacheRead
+            let cacheRate = totalInput > 0 ? Double(stats.cacheRead) / Double(totalInput) * 100 : 0
+            let cacheItem = createMenuItem("  💾 缓存命中: \(String(format: "%.1f", cacheRate))%")
+            menu.addItem(cacheItem)
+
             // 时长
             if let hours = queryWorkHours() {
                 let hoursItem = createMenuItem("  ⏱️ 时长: \(hours)h")
@@ -611,7 +617,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func refreshData() {
-        updateData()
+        // 强制刷新今日和模型分布
+        let todayStats = queryDayStats(days: 0)
+        let modelBreakdown = queryModelBreakdown()
+
+        // 更新缓存
+        DataCache.shared.update(
+            today: todayStats,
+            yesterday: nil,
+            week: nil,
+            month: nil,
+            total: nil,
+            models: modelBreakdown
+        )
+
+        // 更新标题
+        if let stats = todayStats {
+            let totalStr = fmtTitle(stats.total)
+            statusItem.button?.title = totalStr
+        }
+
+        // 更新菜单
+        updateMenu()
     }
 
     func fmtK(_ n: Int64) -> String {
@@ -642,8 +669,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // 格式化总量（亿，无小数）
     func fmtTotal(_ n: Int64) -> String {
         if n >= 100_000_000 {
-            let w = n / 100_000_000
-            return "\(w)亿"
+            let d = Double(n) / 100_000_000
+            return String(format: "%.2f亿", d)
         } else {
             return fmtK(n)
         }
