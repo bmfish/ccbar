@@ -38,8 +38,11 @@ class DataCache {
     private var yesterdayStats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?
     private var weekStats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?
     private var monthStats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?
+    private var totalStats: (reqs: Int, total: Int64)?
     private var modelBreakdown: [(model: String, input: Int64, output: Int64, total: Int64)]?
     private var lastUpdate: Date = Date.distantPast
+    private var lastDailyCacheDate: String?  // 记录上次缓存昨日/7天/30天数据的日期
+    private var lastModelCacheDate: String?  // 记录上次缓存模型分布的小时
 
     func getCachedToday() -> (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)? {
         return todayStats
@@ -57,8 +60,27 @@ class DataCache {
         return monthStats
     }
 
+    func getCachedTotal() -> (reqs: Int, total: Int64)? {
+        return totalStats
+    }
+
     func getCachedModelBreakdown() -> [(model: String, input: Int64, output: Int64, total: Int64)]? {
         return modelBreakdown
+    }
+
+    func needsDailyCache() -> Bool {
+        let today = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none)
+        return lastDailyCacheDate != today
+    }
+
+    func needsModelCache() -> Bool {
+        guard let lastDate = lastModelCacheDate else { return true }
+        let now = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH"
+        let currentHour = formatter.string(from: now)
+        let lastHour = String(lastDate.prefix(2))
+        return currentHour != lastHour
     }
 
     func update(
@@ -66,14 +88,37 @@ class DataCache {
         yesterday: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?,
         week: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?,
         month: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?,
+        total: (reqs: Int, total: Int64)?,
         models: [(model: String, input: Int64, output: Int64, total: Int64)]?
     ) {
         self.todayStats = today
-        self.yesterdayStats = yesterday
-        self.weekStats = week
-        self.monthStats = month
-        self.modelBreakdown = models
+        // 只在需要时更新昨日/7天/30天/总量数据
+        if yesterday != nil {
+            self.yesterdayStats = yesterday
+        }
+        if week != nil {
+            self.weekStats = week
+        }
+        if month != nil {
+            self.monthStats = month
+        }
+        if total != nil {
+            self.totalStats = total
+        }
+        if models != nil {
+            self.modelBreakdown = models
+        }
         self.lastUpdate = Date()
+    }
+
+    func markDailyCacheDone() {
+        lastDailyCacheDate = DateFormatter.localizedString(from: Date(), dateStyle: .short, timeStyle: .none)
+    }
+
+    func markModelCacheDone() {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        lastModelCacheDate = formatter.string(from: Date())
     }
 
     func getLastUpdateTime() -> Date {
@@ -144,20 +189,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func updateData() {
-        // 查询今日统计
+        // 查询今日统计（每次刷新都查）
         let todayStats = queryDayStats(days: 0)
 
-        // 查询昨日统计（用于对比）
-        let yesterdayStats = queryDayStats(days: 1)
+        // 模型分布每小时刷新一次
+        var modelBreakdown: [(model: String, input: Int64, output: Int64, total: Int64)]?
+        if DataCache.shared.needsModelCache() {
+            modelBreakdown = queryModelBreakdown()
+            DataCache.shared.markModelCacheDone()
+        }
 
-        // 查询近7天统计
-        let weekStats = queryDayStats(days: 7)
+        // 昨日/7天/30天/总量数据只在当天第一次刷新时查询
+        var yesterdayStats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?
+        var weekStats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?
+        var monthStats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)?
+        var totalStats: (reqs: Int, total: Int64)?
 
-        // 查询近30天统计
-        let monthStats = queryDayStats(days: 30)
-
-        // 查询模型分布
-        let modelBreakdown = queryModelBreakdown()
+        if DataCache.shared.needsDailyCache() {
+            yesterdayStats = queryDayStats(days: 1)
+            weekStats = queryDayStats(days: 7)
+            monthStats = queryDayStats(days: 30)
+            totalStats = queryTotalStats()
+            DataCache.shared.markDailyCacheDone()
+        }
 
         // 更新缓存
         DataCache.shared.update(
@@ -165,12 +219,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             yesterday: yesterdayStats,
             week: weekStats,
             month: monthStats,
+            total: totalStats,
             models: modelBreakdown
         )
 
         // 更新标题
         if let stats = todayStats {
-            let totalStr = fmtK(stats.total)
+            let totalStr = fmtTitle(stats.total)
             statusItem.button?.title = totalStr
 
             // 检查预警
@@ -351,6 +406,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return result
     }
 
+    func queryTotalStats() -> (reqs: Int, total: Int64)? {
+        guard let db = db else { return nil }
+
+        var stmt: OpaquePointer?
+        let sql = """
+        SELECT
+            COUNT(*) as reqs,
+            COALESCE(SUM(input_tokens + output_tokens + cache_creation_tokens + cache_read_tokens), 0) as total
+        FROM proxy_request_logs
+        """
+
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            return nil
+        }
+
+        var result: (reqs: Int, total: Int64)?
+
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            let reqs = Int(sqlite3_column_int(stmt, 0))
+            let total = sqlite3_column_int64(stmt, 1)
+            result = (reqs: reqs, total: total)
+        }
+
+        sqlite3_finalize(stmt)
+        return result
+    }
+
     func checkWarning(stats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)) {
         guard settings.warningEnabled else { return }
 
@@ -442,30 +524,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 今日统计
         if let stats = DataCache.shared.getCachedToday() {
-            let todayTotal = createMenuItem("📊 今日 Token: \(fmtK(stats.total))")
+            let todayTotal = createMenuItem("📊 今日: \(fmtTitle(stats.total))")
             menu.addItem(todayTotal)
-
-            // 对比昨日
-            if let yesterday = DataCache.shared.getCachedYesterday(), yesterday.total > 0 {
-                let change = Double(stats.total - yesterday.total) / Double(yesterday.total) * 100
-                let emoji = change >= 0 ? "📈" : "📉"
-                let changeStr = String(format: "%+.1f%%", change)
-                let compareItem = createMenuItem("  \(emoji) 较昨日 \(changeStr)")
-                menu.addItem(compareItem)
-            }
 
             let todayReqs = createMenuItem("  🔢 请求: \(stats.reqs)次")
             menu.addItem(todayReqs)
 
-            let todayInput = createMenuItem("  📥 输入: \(fmtK(stats.input))")
-            menu.addItem(todayInput)
-
-            let todayOutput = createMenuItem("  📤 输出: \(fmtK(stats.output))")
-            menu.addItem(todayOutput)
-
-            // 工作时长
+            // 时长
             if let hours = queryWorkHours() {
-                let hoursItem = createMenuItem("  ⏱️ 工作时长: \(hours)h")
+                let hoursItem = createMenuItem("  ⏱️ 时长: \(hours)h")
                 menu.addItem(hoursItem)
             }
         } else {
@@ -494,16 +561,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(.separator())
         }
 
+        // 昨日统计
+        if let stats = DataCache.shared.getCachedYesterday() {
+            let yesterdayItem = createMenuItem("1️⃣ 昨日: \(fmtK(stats.total))")
+            menu.addItem(yesterdayItem)
+        }
+
         // 近7天统计
         if let stats = DataCache.shared.getCachedWeek() {
-            let weekItem = createMenuItem("📅 近7天 Token: \(fmtK(stats.total))")
+            let weekItem = createMenuItem("7️⃣ 近7天: \(fmtK(stats.total))")
             menu.addItem(weekItem)
         }
 
         // 近30天统计
         if let stats = DataCache.shared.getCachedMonth() {
-            let monthItem = createMenuItem("📆 近30天 Token: \(fmtK(stats.total))")
+            let monthItem = createMenuItem("📆 近30天: \(fmtK(stats.total))")
             menu.addItem(monthItem)
+        }
+
+        // 总量
+        if let stats = DataCache.shared.getCachedTotal() {
+            let totalItem = createMenuItem("📊 总量: \(fmtTotal(stats.total))")
+            menu.addItem(totalItem)
         }
 
         menu.addItem(.separator())
@@ -524,7 +603,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(settingsItem)
 
         // 退出
-        let quitItem = NSMenuItem(title: "❌ 退出", action: #selector(quit), keyEquivalent: "q")
+        let quitItem = NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q")
         quitItem.keyEquivalentModifierMask = [.command]
         menu.addItem(quitItem)
 
@@ -538,12 +617,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func fmtK(_ n: Int64) -> String {
         if n >= 100_000_000 {
             let d = Double(n) / 100_000_000
+            return String(format: "%.2f亿", d)
+        } else if n >= 10_000 {
+            let w = n / 10_000
+            return "\(w)万"
+        } else {
+            return "\(n)"
+        }
+    }
+
+    // 格式化标题（亿保留4位小数）
+    func fmtTitle(_ n: Int64) -> String {
+        if n >= 100_000_000 {
+            let d = Double(n) / 100_000_000
             return String(format: "%.4f亿", d)
         } else if n >= 10_000 {
             let w = n / 10_000
             return "\(w)万"
         } else {
             return "\(n)"
+        }
+    }
+
+    // 格式化总量（亿，无小数）
+    func fmtTotal(_ n: Int64) -> String {
+        if n >= 100_000_000 {
+            let w = n / 100_000_000
+            return "\(w)亿"
+        } else {
+            return fmtK(n)
         }
     }
 
