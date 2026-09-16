@@ -538,35 +538,26 @@ class PopoverViewController: NSViewController {
         buttonBar.addSubview(refreshBtn)
 
         // 设置按钮
-        let settingsBtn = createHorizontalButton(icon: "⚙️", title: "设置", action: #selector(AppDelegate.openSettings))
+        let settingsBtn = createHorizontalButton(icon: "⚙️", title: "设置", action: #selector(AppDelegate.openSettingsAndClose))
         buttonBar.addSubview(settingsBtn)
 
         // 退出按钮
         let quitBtn = createHorizontalButton(icon: "❌", title: "退出", action: #selector(AppDelegate.quit))
         buttonBar.addSubview(quitBtn)
 
-        // 水平布局：四个按钮等宽排列
+        // 使用 NSStackView 水平排列按钮
+        let buttonStack = NSStackView(views: [copyBtn, refreshBtn, settingsBtn, quitBtn])
+        buttonStack.orientation = .horizontal
+        buttonStack.distribution = .fillEqually
+        buttonStack.spacing = 4
+        buttonStack.translatesAutoresizingMaskIntoConstraints = false
+        buttonBar.addSubview(buttonStack)
+
         NSLayoutConstraint.activate([
-            copyBtn.leadingAnchor.constraint(equalTo: buttonBar.leadingAnchor),
-            copyBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
-            copyBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
-            copyBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25),
-
-            refreshBtn.leadingAnchor.constraint(equalTo: copyBtn.trailingAnchor, constant: 4),
-            refreshBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
-            refreshBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
-            refreshBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25),
-
-            settingsBtn.leadingAnchor.constraint(equalTo: refreshBtn.trailingAnchor, constant: 4),
-            settingsBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
-            settingsBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
-            settingsBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25),
-
-            quitBtn.leadingAnchor.constraint(equalTo: settingsBtn.trailingAnchor, constant: 4),
-            quitBtn.trailingAnchor.constraint(equalTo: buttonBar.trailingAnchor),
-            quitBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
-            quitBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
-            quitBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25)
+            buttonStack.topAnchor.constraint(equalTo: buttonBar.topAnchor),
+            buttonStack.leadingAnchor.constraint(equalTo: buttonBar.leadingAnchor),
+            buttonStack.trailingAnchor.constraint(equalTo: buttonBar.trailingAnchor),
+            buttonStack.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor)
         ])
     }
 
@@ -1511,7 +1502,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         pasteboard.clearContents()
         pasteboard.setString(text, forType: .string)
 
-        // 显示提示
+        // 关闭 popover 后显示提示
+        closePopover()
+
         let alert = NSAlert()
         alert.messageText = "已复制到剪贴板"
         alert.informativeText = "统计数据已复制，可直接粘贴使用"
@@ -1529,6 +1522,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         settingsWindow?.showWindow(nil)
         settingsWindow?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func openSettingsAndClose() {
+        closePopover()
+        openSettings()
     }
 
     @objc func openDetail() {
@@ -1615,6 +1613,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc func quit() {
+        closePopover()
         NSApp.terminate(nil)
     }
 }
