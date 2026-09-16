@@ -152,6 +152,183 @@ class ProgressBarView: NSView {
     }
 }
 
+/// 柱状图视图
+class BarChartView: NSView {
+    var values: [CGFloat] = []
+    var labels: [String] = []
+    var barColor: NSColor = Design.brandColor
+    var highlightColor: NSColor = Design.accentColor
+    var highlightIndex: Int = -1  // 高亮某一天（如今天）
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard !values.isEmpty else { return }
+
+        let maxVal = values.max() ?? 1
+        let padding: CGFloat = 4
+        let labelHeight: CGFloat = 16
+        let availableHeight = bounds.height - labelHeight - padding * 2
+        let barWidth = max(8, (bounds.width - padding * 2) / CGFloat(values.count) - 4)
+
+        for (i, val) in values.enumerated() {
+            let x = padding + CGFloat(i) * (barWidth + 4)
+            let barHeight = max(2, (val / maxVal) * availableHeight)
+            let y = padding + (availableHeight - barHeight)
+
+            // 柱子
+            let barRect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
+            let barPath = NSBezierPath(roundedRect: barRect, xRadius: 3, yRadius: 3)
+            let color = (i == highlightIndex) ? highlightColor : barColor
+            color.setFill()
+            barPath.fill()
+
+            // 标签
+            if i < labels.count && i % 2 == 0 {  // 隔一个显示标签
+                let label = NSTextField(labelWithString: labels[i])
+                label.font = NSFont.systemFont(ofSize: 8)
+                label.textColor = Design.textMuted
+                label.alignment = .center
+                label.frame = NSRect(x: x - 2, y: 0, width: barWidth + 4, height: labelHeight)
+                addSubview(label)
+            }
+        }
+    }
+}
+
+/// 环形图视图（用于模型分布）
+class DonutChartView: NSView {
+    struct Segment {
+        let value: CGFloat
+        let color: NSColor
+        let label: String
+    }
+
+    var segments: [Segment] = []
+    var lineWidth: CGFloat = 20
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard !segments.isEmpty else { return }
+
+        let total = segments.reduce(0) { $0 + $1.value }
+        guard total > 0 else { return }
+
+        let center = NSPoint(x: bounds.width / 2, y: bounds.height / 2)
+        let radius = min(bounds.width, bounds.height) / 2 - lineWidth / 2
+        var startAngle: CGFloat = 90  // 从顶部开始
+
+        for segment in segments {
+            let angle = (segment.value / total) * 360
+            let endAngle = startAngle - angle
+
+            // 绘制弧线
+            let path = NSBezierPath()
+            path.appendArc(withCenter: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: true)
+            path.lineWidth = lineWidth
+            path.lineCapStyle = .round
+            segment.color.setStroke()
+            path.stroke()
+
+            startAngle = endAngle
+        }
+
+        // 中心文字
+        let totalLabel = NSTextField(labelWithString: Design.formatTokens(Int64(total)))
+        totalLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .bold)
+        totalLabel.textColor = Design.textPrimary
+        totalLabel.alignment = .center
+        let labelSize = totalLabel.intrinsicContentSize
+        totalLabel.frame = NSRect(x: center.x - labelSize.width / 2,
+                                  y: center.y - labelSize.height / 2,
+                                  width: labelSize.width, height: labelSize.height)
+        addSubview(totalLabel)
+    }
+}
+
+/// 带标签的环形图（包含图例）
+class DonutChartWithLegendView: NSView {
+    struct Item {
+        let value: CGFloat
+        let color: NSColor
+        let label: String
+        let percentage: String
+    }
+
+    var items: [Item] = []
+    var donutSize: CGFloat = 120
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard !items.isEmpty else { return }
+
+        // 绘制环形图
+        let donutFrame = NSRect(x: 0, y: (bounds.height - donutSize) / 2, width: donutSize, height: donutSize)
+        let donutView = DonutChartView(frame: donutFrame)
+        donutView.segments = items.map { DonutChartView.Segment(value: $0.value, color: $0.color, label: $0.label) }
+        donutView.lineWidth = 18
+        addSubview(donutView)
+
+        // 绘制图例
+        var legendY: CGFloat = bounds.height - 20
+        let legendX: CGFloat = donutSize + 16
+        let colorSize: CGFloat = 10
+        let lineHeight: CGFloat = 18
+
+        for item in items.prefix(6) {  // 最多显示6个
+            // 颜色块
+            let colorRect = NSRect(x: legendX, y: legendY, width: colorSize, height: colorSize)
+            let colorPath = NSBezierPath(roundedRect: colorRect, xRadius: 2, yRadius: 2)
+            item.color.setFill()
+            colorPath.fill()
+
+            // 标签
+            let labelField = NSTextField(labelWithString: item.label)
+            labelField.font = NSFont.systemFont(ofSize: 11)
+            labelField.textColor = Design.textPrimary
+            labelField.frame = NSRect(x: legendX + colorSize + 6, y: legendY - 2, width: 100, height: 14)
+            addSubview(labelField)
+
+            // 百分比
+            let percentField = NSTextField(labelWithString: item.percentage)
+            percentField.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+            percentField.textColor = Design.textSecondary
+            percentField.alignment = .right
+            percentField.frame = NSRect(x: bounds.width - 40, y: legendY - 2, width: 35, height: 14)
+            addSubview(percentField)
+
+            legendY -= lineHeight
+        }
+    }
+}
+
+/// 卡片容器视图（带阴影和圆角）
+class CardContainerView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // 背景
+        let bgPath = NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12)
+        Design.cardFillDark.setFill()
+        bgPath.fill()
+
+        // 边框
+        let borderPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
+        Design.cardBorderDark.setStroke()
+        borderPath.lineWidth = 1
+        borderPath.stroke()
+
+        // 阴影
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.3)
+        shadow.shadowBlurRadius = 8
+        shadow.shadowOffset = NSSize(width: 0, height: -4)
+        self.shadow = shadow
+    }
+}
+
 /// 卡片容器视图
 class CardView: NSView {
     override func draw(_ dirtyRect: NSRect) {
@@ -2098,6 +2275,15 @@ class DetailWindowController: NSWindowController {
         // 清空旧内容
         contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
+        // 添加 sparkline 趋势图
+        let chartContainer = NSView()
+        chartContainer.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.heightAnchor.constraint(equalToConstant: 60).isActive = true
+        contentStack.addArrangedSubview(chartContainer)
+        chartContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+        contentStack.addArrangedSubview(createSeparator())
+
         // 标题行
         let headerRow = createHeaderRow()
         contentStack.addArrangedSubview(headerRow)
@@ -2109,6 +2295,7 @@ class DetailWindowController: NSWindowController {
         var totalReqs = 0
         var totalToken: Int64 = 0
         var totalCacheRead: Int64 = 0
+        var dailyTokens: [CGFloat] = []  // 用于 sparkline
 
         for dayOffset in 0..<7 {
             guard let date = calendar.date(byAdding: .day, value: dayOffset, to: weekStart) else { continue }
@@ -2163,7 +2350,23 @@ class DetailWindowController: NSWindowController {
             let row = createRow(date: dateStr, reqs: reqs, totalToken: dayToken, cacheRead: cacheRead)
             contentStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+            // 收集数据用于 sparkline
+            dailyTokens.append(CGFloat(dayToken))
         }
+
+        // 创建 sparkline 趋势图
+        let sparkline = SparklineView(frame: NSRect(x: 8, y: 8, width: 400, height: 44))
+        sparkline.values = dailyTokens
+        sparkline.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.addSubview(sparkline)
+
+        NSLayoutConstraint.activate([
+            sparkline.topAnchor.constraint(equalTo: chartContainer.topAnchor, constant: 8),
+            sparkline.leadingAnchor.constraint(equalTo: chartContainer.leadingAnchor, constant: 8),
+            sparkline.trailingAnchor.constraint(equalTo: chartContainer.trailingAnchor, constant: -8),
+            sparkline.bottomAnchor.constraint(equalTo: chartContainer.bottomAnchor, constant: -8)
+        ])
 
         // 合计行
         contentStack.addArrangedSubview(createSeparator())
@@ -2747,13 +2950,6 @@ class ModelDetailWindowController: NSWindowController {
             return
         }
 
-        // 标题行
-        let headerRow = createHeaderRow()
-        contentStack.addArrangedSubview(headerRow)
-        headerRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
-
-        contentStack.addArrangedSubview(createSeparator())
-
         // 计算合计
         var totalReqs = 0
         var totalToken: Int64 = 0
@@ -2763,6 +2959,51 @@ class ModelDetailWindowController: NSWindowController {
             totalToken += model.totalToken
             totalCacheRead += model.cacheRead
         }
+
+        // 添加环形图
+        let chartContainer = NSView()
+        chartContainer.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.heightAnchor.constraint(equalToConstant: 150).isActive = true
+        contentStack.addArrangedSubview(chartContainer)
+        chartContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+        let donutView = DonutChartWithLegendView(frame: NSRect(x: 0, y: 0, width: 500, height: 150))
+        let colors: [NSColor] = [
+            Design.brandColor,
+            NSColor.systemBlue,
+            NSColor.systemGreen,
+            NSColor.systemOrange,
+            NSColor.systemPurple,
+            NSColor.systemPink
+        ]
+        donutView.items = models.prefix(6).enumerated().map { index, model in
+            let percentage = totalToken > 0 ? String(format: "%.1f%%", Double(model.totalToken) / Double(totalToken) * 100) : "0%"
+            let shortName = model.model.count > 12 ? String(model.model.prefix(12)) + "..." : model.model
+            return DonutChartWithLegendView.Item(
+                value: CGFloat(model.totalToken),
+                color: colors[index % colors.count],
+                label: shortName,
+                percentage: percentage
+            )
+        }
+        donutView.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.addSubview(donutView)
+
+        NSLayoutConstraint.activate([
+            donutView.topAnchor.constraint(equalTo: chartContainer.topAnchor),
+            donutView.leadingAnchor.constraint(equalTo: chartContainer.leadingAnchor),
+            donutView.trailingAnchor.constraint(equalTo: chartContainer.trailingAnchor),
+            donutView.bottomAnchor.constraint(equalTo: chartContainer.bottomAnchor)
+        ])
+
+        contentStack.addArrangedSubview(createSeparator())
+
+        // 标题行
+        let headerRow = createHeaderRow()
+        contentStack.addArrangedSubview(headerRow)
+        headerRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+        contentStack.addArrangedSubview(createSeparator())
 
         // 数据行
         for model in models {
@@ -3067,6 +3308,28 @@ class HourlyDetailWindowController: NSWindowController {
                 break
             }
         }
+
+        // 添加柱状图
+        let chartContainer = NSView()
+        chartContainer.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.heightAnchor.constraint(equalToConstant: 100).isActive = true
+        contentStack.addArrangedSubview(chartContainer)
+        chartContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+        let barChart = BarChartView(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
+        barChart.values = (startHour...endHour).map { CGFloat(hourlyData[$0].reqs) }
+        barChart.labels = (startHour...endHour).map { "\($0)" }
+        barChart.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.addSubview(barChart)
+
+        NSLayoutConstraint.activate([
+            barChart.topAnchor.constraint(equalTo: chartContainer.topAnchor),
+            barChart.leadingAnchor.constraint(equalTo: chartContainer.leadingAnchor),
+            barChart.trailingAnchor.constraint(equalTo: chartContainer.trailingAnchor),
+            barChart.bottomAnchor.constraint(equalTo: chartContainer.bottomAnchor)
+        ])
+
+        contentStack.addArrangedSubview(createSeparator())
 
         // 标题行
         let headerRow = createHeaderRow()
