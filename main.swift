@@ -783,10 +783,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     var popover: NSPopover?
+    var eventMonitor: Any?
 
     @objc func togglePopover() {
         if let popover = popover, popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
             showPopover()
         }
@@ -796,7 +797,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if popover == nil {
             let popover = NSPopover()
             popover.contentSize = NSSize(width: 300, height: 420)
-            popover.behavior = .transient
+            popover.behavior = .applicationDefined  // 改用手动控制
             popover.animates = true
             popover.delegate = self
             popover.contentViewController = PopoverViewController()
@@ -806,11 +807,32 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if let button = statusItem.button {
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
+
+        // 添加全局事件监听器
+        if eventMonitor == nil {
+            eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+                if let popover = self?.popover, popover.isShown {
+                    self?.closePopover()
+                }
+            }
+        }
+    }
+
+    func closePopover() {
+        popover?.performClose(nil)
+        removeEventMonitor()
+    }
+
+    func removeEventMonitor() {
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
     }
 
     func popoverDidClose(_ notification: Notification) {
-        // Popover 关闭时清理
         popover = nil
+        removeEventMonitor()
     }
 
     func popoverShouldClose(_ popover: NSPopover) -> Bool {
