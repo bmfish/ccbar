@@ -360,13 +360,14 @@ class PopoverViewController: NSViewController {
         let total = AppDelegate.shared?.queryTotalStats()
         let models = AppDelegate.shared?.queryModelBreakdown()
 
-        // MARK: - 问候语 (紧凑)
+        // MARK: - 问候语 (适当大小)
         let greeting = AppDelegate.shared?.greetings.randomElement() ?? "ccBar 用量统计"
         let greetingLabel = NSTextField(labelWithString: greeting)
-        greetingLabel.font = NSFont.systemFont(ofSize: 11)
+        greetingLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)  // 增大字号
         greetingLabel.textColor = Design.textSecondary
         greetingLabel.maximumNumberOfLines = 1
         greetingLabel.lineBreakMode = .byTruncatingTail
+        greetingLabel.alignment = .center  // 居中显示
         contentStack.addArrangedSubview(greetingLabel)
         greetingLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
 
@@ -385,10 +386,10 @@ class PopoverViewController: NSViewController {
             bigNumber.textColor = Design.brandColor
             contentStack.addArrangedSubview(bigNumber)
 
-            // 三列统计 - 使用 Auto Layout
+            // 三列统计 - 使用 Auto Layout，增加高度
             let statsRow = NSView()
             statsRow.translatesAutoresizingMaskIntoConstraints = false
-            statsRow.heightAnchor.constraint(equalToConstant: 36).isActive = true
+            statsRow.heightAnchor.constraint(equalToConstant: 44).isActive = true  // 增加高度
             contentStack.addArrangedSubview(statsRow)
             statsRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
 
@@ -401,13 +402,13 @@ class PopoverViewController: NSViewController {
             statsRow.addSubview(reqColumn)
 
             let reqLabel = NSTextField(labelWithString: "请求数")
-            reqLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            reqLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)  // 增大字号
             reqLabel.textColor = Design.textMuted
             reqLabel.translatesAutoresizingMaskIntoConstraints = false
             reqColumn.addSubview(reqLabel)
 
             let reqValue = NSTextField(labelWithString: "\(today.reqs)次")
-            reqValue.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            reqValue.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .medium)  // 增大字号
             reqValue.textColor = Design.textPrimary
             reqValue.translatesAutoresizingMaskIntoConstraints = false
             reqColumn.addSubview(reqValue)
@@ -417,9 +418,9 @@ class PopoverViewController: NSViewController {
                 reqColumn.topAnchor.constraint(equalTo: statsRow.topAnchor),
                 reqColumn.bottomAnchor.constraint(equalTo: statsRow.bottomAnchor),
                 reqColumn.widthAnchor.constraint(equalTo: statsRow.widthAnchor, multiplier: 0.33),
-                reqLabel.topAnchor.constraint(equalTo: reqColumn.topAnchor, constant: 4),
+                reqLabel.topAnchor.constraint(equalTo: reqColumn.topAnchor, constant: 6),  // 增加顶部间距
                 reqLabel.centerXAnchor.constraint(equalTo: reqColumn.centerXAnchor),
-                reqValue.topAnchor.constraint(equalTo: reqLabel.bottomAnchor, constant: 2),
+                reqValue.topAnchor.constraint(equalTo: reqLabel.bottomAnchor, constant: 4),  // 增加标签和数值间距
                 reqValue.centerXAnchor.constraint(equalTo: reqColumn.centerXAnchor)
             ])
 
@@ -429,13 +430,13 @@ class PopoverViewController: NSViewController {
             statsRow.addSubview(cacheColumn)
 
             let cacheLabel = NSTextField(labelWithString: "缓存命中")
-            cacheLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            cacheLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)  // 增大字号
             cacheLabel.textColor = Design.textMuted
             cacheLabel.translatesAutoresizingMaskIntoConstraints = false
             cacheColumn.addSubview(cacheLabel)
 
             let cacheValue = NSTextField(labelWithString: String(format: "%.0f%%", cacheRate))
-            cacheValue.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            cacheValue.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .medium)  // 增大字号
             cacheValue.textColor = cacheRate > 80 ? Design.successColor : Design.warningColor
             cacheValue.translatesAutoresizingMaskIntoConstraints = false
             cacheColumn.addSubview(cacheValue)
@@ -445,9 +446,9 @@ class PopoverViewController: NSViewController {
                 cacheColumn.topAnchor.constraint(equalTo: statsRow.topAnchor),
                 cacheColumn.bottomAnchor.constraint(equalTo: statsRow.bottomAnchor),
                 cacheColumn.widthAnchor.constraint(equalTo: statsRow.widthAnchor, multiplier: 0.33),
-                cacheLabel.topAnchor.constraint(equalTo: cacheColumn.topAnchor, constant: 4),
+                cacheLabel.topAnchor.constraint(equalTo: cacheColumn.topAnchor, constant: 6),  // 增加顶部间距
                 cacheLabel.centerXAnchor.constraint(equalTo: cacheColumn.centerXAnchor),
-                cacheValue.topAnchor.constraint(equalTo: cacheLabel.bottomAnchor, constant: 2),
+                cacheValue.topAnchor.constraint(equalTo: cacheLabel.bottomAnchor, constant: 4),  // 增加标签和数值间距
                 cacheValue.centerXAnchor.constraint(equalTo: cacheColumn.centerXAnchor)
             ])
 
@@ -458,13 +459,13 @@ class PopoverViewController: NSViewController {
                 statsRow.addSubview(hoursColumn)
 
                 let hoursLabel = NSTextField(labelWithString: "时长")
-                hoursLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+                hoursLabel.font = NSFont.systemFont(ofSize: 11, weight: .regular)  // 增大字号
                 hoursLabel.textColor = Design.textMuted
                 hoursLabel.translatesAutoresizingMaskIntoConstraints = false
                 hoursColumn.addSubview(hoursLabel)
 
                 let hoursValue = NSTextField(labelWithString: "\(hours)h")
-                hoursValue.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+                hoursValue.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .medium)  // 增大字号
                 hoursValue.textColor = Design.textPrimary
                 hoursValue.translatesAutoresizingMaskIntoConstraints = false
                 hoursColumn.addSubview(hoursValue)
@@ -474,9 +475,9 @@ class PopoverViewController: NSViewController {
                     hoursColumn.trailingAnchor.constraint(equalTo: statsRow.trailingAnchor),
                     hoursColumn.topAnchor.constraint(equalTo: statsRow.topAnchor),
                     hoursColumn.bottomAnchor.constraint(equalTo: statsRow.bottomAnchor),
-                    hoursLabel.topAnchor.constraint(equalTo: hoursColumn.topAnchor, constant: 4),
+                    hoursLabel.topAnchor.constraint(equalTo: hoursColumn.topAnchor, constant: 6),  // 增加顶部间距
                     hoursLabel.centerXAnchor.constraint(equalTo: hoursColumn.centerXAnchor),
-                    hoursValue.topAnchor.constraint(equalTo: hoursLabel.bottomAnchor, constant: 2),
+                    hoursValue.topAnchor.constraint(equalTo: hoursLabel.bottomAnchor, constant: 4),  // 增加标签和数值间距
                     hoursValue.centerXAnchor.constraint(equalTo: hoursColumn.centerXAnchor)
                 ])
             }
