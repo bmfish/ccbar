@@ -717,7 +717,7 @@ class PopoverViewController: NSViewController {
 
 // MARK: - AppDelegate
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     static var shared: AppDelegate?
 
     var statusItem: NSStatusItem!
@@ -795,9 +795,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func showPopover() {
         if popover == nil {
             let popover = NSPopover()
-            popover.contentSize = NSSize(width: 320, height: 500)
+            popover.contentSize = NSSize(width: 300, height: 420)
             popover.behavior = .transient
             popover.animates = true
+            popover.delegate = self
             popover.contentViewController = PopoverViewController()
             self.popover = popover
         }
@@ -805,6 +806,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = statusItem.button {
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        // Popover 关闭时清理
+        popover = nil
+    }
+
+    func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        return true
     }
 
     func connectDB() {
