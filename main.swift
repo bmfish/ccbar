@@ -168,6 +168,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 初始数据库连接
         connectDB()
 
+        // 初始化历史备份表
+        initHistoryTable()
+
+        // 备份历史数据（启动时执行一次）
+        backupHistory()
+
         // 初始更新
         updateData()
 
@@ -183,6 +189,134 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func initHistoryTable() {
+        guard let db = db else { return }
+
+        let sql = """
+        CREATE TABLE IF NOT EXISTS proxy_request_logs_history (
+            request_id TEXT PRIMARY KEY,
+            provider_id TEXT NOT NULL,
+            app_type TEXT NOT NULL,
+            model TEXT NOT NULL,
+            request_model TEXT,
+            input_tokens INTEGER NOT NULL DEFAULT 0,
+            output_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+            cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+            input_cost_usd TEXT NOT NULL DEFAULT '0',
+            output_cost_usd TEXT NOT NULL DEFAULT '0',
+            cache_read_cost_usd TEXT NOT NULL DEFAULT '0',
+            cache_creation_cost_usd TEXT NOT NULL DEFAULT '0',
+            total_cost_usd TEXT NOT NULL DEFAULT '0',
+            latency_ms INTEGER NOT NULL,
+            first_token_ms INTEGER,
+            duration_ms INTEGER,
+            status_code INTEGER NOT NULL,
+            error_message TEXT,
+            session_id TEXT,
+            provider_type TEXT,
+            is_streaming INTEGER NOT NULL DEFAULT 0,
+            cost_multiplier TEXT NOT NULL DEFAULT '1.0',
+            created_at INTEGER NOT NULL,
+            data_source TEXT NOT NULL DEFAULT 'proxy',
+            pricing_model TEXT,
+            input_token_semantics INTEGER NOT NULL DEFAULT 0,
+            backed_up_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+        );
+        """
+
+        if sqlite3_exec(db, sql, nil, nil, nil) != SQLITE_OK {
+            print("创建历史备份表失败")
+        } else {
+            print("历史备份表已就绪")
+        }
+    }
+
+    func backupHistory() {
+        guard let db = db else { return }
+
+        // 获取上次备份日期
+        let lastBackupDate = UserDefaults.standard.string(forKey: "lastHistoryBackupDate") ?? "2000-01-01"
+
+        // 计算昨天的日期
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let yesterdayStr = formatter.string(from: yesterday)
+
+        // 如果已经备份过昨天，跳过
+        guard lastBackupDate < yesterdayStr else {
+            print("历史数据已是最新（上次备份: \(lastBackupDate)）")
+            return
+        }
+
+        // 备份从上次备份日期到昨天的数据
+        let sql = """
+        INSERT OR IGNORE INTO proxy_request_logs_history
+        SELECT
+            request_id, provider_id, app_type, model, request_model,
+            input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+            input_cost_usd, output_cost_usd, cache_read_cost_usd, cache_creation_cost_usd,
+            total_cost_usd, latency_ms, first_token_ms, duration_ms,
+            status_code, error_message, session_id, provider_type,
+            is_streaming, cost_multiplier, created_at, data_source,
+            pricing_model, input_token_semantics,
+            strftime('%s', 'now') as backed_up_at
+        FROM proxy_request_logs
+        WHERE date(created_at, 'unixepoch', 'localtime') > ?
+          AND date(created_at, 'unixepoch', 'localtime') <= ?
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            print("准备备份语句失败")
+            return
+        }
+
+        sqlite3_bind_text(stmt, 1, lastBackupDate, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+        sqlite3_bind_text(stmt, 2, yesterdayStr, -1, unsafeBitCast(-1, to: sqlite3_destructor_type.self))
+
+        if sqlite3_step(stmt) == SQLITE_DONE {
+            let changes = sqlite3_changes(db)
+            print("历史备份完成: 新增 \(changes) 条记录（\(lastBackupDate) ~ \(yesterdayStr)）")
+
+            // 更新备份日期
+            UserDefaults.standard.set(yesterdayStr, forKey: "lastHistoryBackupDate")
+        } else {
+            print("历史备份失败")
+        }
+
+        sqlite3_finalize(stmt)
+    }
+
+    func checkAndRunScheduledBackup() {
+        let now = Date()
+        let calendar = Calendar.current
+        let hour = calendar.component(.hour, from: now)
+        let minute = calendar.component(.minute, from: now)
+
+        // 检查是否是备份时间（11:00 或 20:00）
+        let isBackupTime = (hour == 11 && minute == 0) || (hour == 20 && minute == 0)
+
+        guard isBackupTime else { return }
+
+        // 获取今天是否已经备份过
+        let lastBackupDate = UserDefaults.standard.string(forKey: "lastHistoryBackupDate") ?? "2000-01-01"
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let yesterdayStr = formatter.string(from: Calendar.current.date(byAdding: .day, value: -1, to: now)!)
+
+        // 如果20:00检查，且已经备份到昨天，跳过
+        if hour == 20 && lastBackupDate >= yesterdayStr {
+            print("20:00 检查：历史数据已是最新，跳过备份")
+            return
+        }
+
+        // 执行备份
+        print("执行定时备份（\(hour):00）")
+        backupHistory()
+    }
+
     func startTimer() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(timeInterval: TimeInterval(settings.refreshInterval),
@@ -193,6 +327,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc func updateData() {
+        // 检查是否需要执行定时备份（11:00 或 20:00）
+        checkAndRunScheduledBackup()
+
         // 查询今日统计（每次刷新都查）
         let todayStats = queryDayStats(days: 0)
 
