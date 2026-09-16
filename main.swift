@@ -1,6 +1,181 @@
 import Cocoa
 import SQLite3
 
+// MARK: - Design System (借鉴 CCSwitcher 风格)
+
+enum Design {
+    // 品牌色
+    static let brandColor = NSColor(red: 0xE8/255, green: 0x6D/255, blue: 0x45/255, alpha: 1.0) // #E86D45
+    static let accentColor = NSColor.systemBlue
+
+    // 卡片样式
+    static let cardCornerRadius: CGFloat = 10
+    static let cardPadding: CGFloat = 12
+    static let cardShadowRadius: CGFloat = 5
+    static let cardShadowOffset: CGFloat = 6
+
+    // 进度条
+    static let barCornerRadius: CGFloat = 3
+    static let barHeight: CGFloat = 7
+
+    // 间距
+    static let sectionSpacing: CGFloat = 16
+    static let itemSpacing: CGFloat = 8
+
+    // 颜色（深色模式）
+    static let backgroundDark = NSColor(red: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+    static let cardFillDark = NSColor.black.withAlphaComponent(0.21)
+    static let cardBorderDark = NSColor.white.withAlphaComponent(0.20)
+    static let textPrimary = NSColor.white
+    static let textSecondary = NSColor.white.withAlphaComponent(0.55)
+    static let textMuted = NSColor(white: 0.6, alpha: 1.0)
+
+    // 好的状态色
+    static let successColor = NSColor.systemGreen
+    static let warningColor = NSColor.systemOrange
+    static let errorColor = NSColor.systemRed
+
+    // 格式化数字
+    static func formatTokens(_ n: Int64) -> String {
+        if n >= 100_000_000 {
+            return String(format: "%.2f亿", Double(n) / 100_000_000)
+        } else if n >= 10_000 {
+            return "\(n / 10_000)万"
+        } else {
+            return "\(n)"
+        }
+    }
+
+    static func formatTokensK(_ n: Int64) -> String {
+        if n >= 100_000_000 {
+            return String(format: "%.2f亿", Double(n) / 100_000_000)
+        } else if n >= 10_000 {
+            return "\(n / 10_000)万"
+        } else {
+            return "\(n)"
+        }
+    }
+}
+
+// MARK: - 自定义视图组件
+
+/// Sparkline 小图表
+class SparklineView: NSView {
+    var values: [CGFloat] = []
+    var lineColor: NSColor = Design.brandColor
+    var fillColor: NSColor = Design.brandColor.withAlphaComponent(0.15)
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard values.count > 1 else { return }
+
+        let maxVal = values.max() ?? 1
+        let minVal = values.min() ?? 0
+        let range = maxVal - minVal
+
+        let stepX = bounds.width / CGFloat(values.count - 1)
+        let padding: CGFloat = 2
+        let availableHeight = bounds.height - padding * 2
+
+        // 计算点
+        var points: [NSPoint] = []
+        for (i, val) in values.enumerated() {
+            let x = CGFloat(i) * stepX
+            let normalized = range > 0 ? (val - minVal) / range : 0.5
+            let y = padding + normalized * availableHeight
+            points.append(NSPoint(x: x, y: y))
+        }
+
+        // 绘制填充区域
+        let fillPath = NSBezierPath()
+        fillPath.move(to: NSPoint(x: points[0].x, y: padding))
+        for point in points {
+            fillPath.line(to: point)
+        }
+        fillPath.line(to: NSPoint(x: points.last!.x, y: padding))
+        fillPath.close()
+        fillColor.setFill()
+        fillPath.fill()
+
+        // 绘制线条
+        let linePath = NSBezierPath()
+        linePath.lineWidth = 1.5
+        linePath.lineJoinStyle = .round
+        linePath.lineCapStyle = .round
+        linePath.move(to: points[0])
+        for point in points.dropFirst() {
+            linePath.line(to: point)
+        }
+        lineColor.setStroke()
+        linePath.stroke()
+
+        // 绘制终点圆点
+        if let lastPoint = points.last {
+            let dotRadius: CGFloat = 3
+            let dotRect = NSRect(x: lastPoint.x - dotRadius, y: lastPoint.y - dotRadius,
+                               width: dotRadius * 2, height: dotRadius * 2)
+            let dotPath = NSBezierPath(ovalIn: dotRect)
+            lineColor.setFill()
+            dotPath.fill()
+        }
+    }
+}
+
+/// 进度条视图
+class ProgressBarView: NSView {
+    var progress: CGFloat = 0 // 0.0 ~ 1.0
+    var trackColor: NSColor = NSColor.white.withAlphaComponent(0.15)
+    var fillColor: NSColor = Design.brandColor
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // 轨道
+        let trackRect = NSRect(x: 0, y: (bounds.height - Design.barHeight) / 2,
+                              width: bounds.width, height: Design.barHeight)
+        let trackPath = NSBezierPath(roundedRect: trackRect, xRadius: Design.barCornerRadius,
+                                    yRadius: Design.barCornerRadius)
+        trackColor.setFill()
+        trackPath.fill()
+
+        // 填充
+        let fillWidth = bounds.width * min(max(progress, 0), 1)
+        if fillWidth > 0 {
+            let fillRect = NSRect(x: 0, y: (bounds.height - Design.barHeight) / 2,
+                                 width: fillWidth, height: Design.barHeight)
+            let fillPath = NSBezierPath(roundedRect: fillRect, xRadius: Design.barCornerRadius,
+                                       yRadius: Design.barCornerRadius)
+            fillColor.setFill()
+            fillPath.fill()
+        }
+    }
+}
+
+/// 卡片容器视图
+class CardView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        // 背景
+        let bgPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1),
+                                  xRadius: Design.cardCornerRadius,
+                                  yRadius: Design.cardCornerRadius)
+        Design.cardFillDark.setFill()
+        bgPath.fill()
+
+        // 边框
+        let borderPath = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                                      xRadius: Design.cardCornerRadius,
+                                      yRadius: Design.cardCornerRadius)
+        Design.cardBorderDark.setStroke()
+        borderPath.lineWidth = 1
+        borderPath.stroke()
+    }
+}
+
+// MARK: - Settings
+
 class Settings {
     let defaults = UserDefaults.standard
 
@@ -708,38 +883,148 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return item
         }
 
+        // 创建卡片式菜单项
+        func createCardMenuItem(title: String, subtitle: String? = nil, icon: String? = nil,
+                               action: Selector? = nil, keyEquivalent: String = "") -> NSMenuItem {
+            let item = NSMenuItem(title: "", action: action, keyEquivalent: keyEquivalent)
+            if action != nil {
+                item.keyEquivalentModifierMask = [.command]
+            }
+
+            // 创建自定义视图
+            let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: subtitle != nil ? 52 : 36))
+
+            // 图标
+            var xOffset: CGFloat = 12
+            if let icon = icon {
+                let iconSize: CGFloat = 16
+                let iconView = NSTextField(labelWithString: icon)
+                iconView.font = NSFont.systemFont(ofSize: iconSize)
+                iconView.frame = NSRect(x: xOffset, y: (containerView.frame.height - iconSize) / 2,
+                                       width: iconSize + 4, height: iconSize)
+                iconView.textColor = Design.brandColor
+                containerView.addSubview(iconView)
+                xOffset += iconSize + 8
+            }
+
+            // 标题
+            let titleField = NSTextField(frame: NSRect(x: xOffset, y: subtitle != nil ? 24 : 10,
+                                                       width: 240 - xOffset, height: 16))
+            titleField.stringValue = title
+            titleField.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+            titleField.textColor = Design.textPrimary
+            titleField.lineBreakMode = .byTruncatingTail
+            containerView.addSubview(titleField)
+
+            // 副标题
+            if let subtitle = subtitle {
+                let subtitleField = NSTextField(frame: NSRect(x: xOffset, y: 8,
+                                                              width: 240 - xOffset, height: 14))
+                subtitleField.stringValue = subtitle
+                subtitleField.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+                subtitleField.textColor = Design.textSecondary
+                containerView.addSubview(subtitleField)
+            }
+
+            item.view = containerView
+            return item
+        }
+
+        // 创建统计卡片
+        func createStatCard(label: String, value: String, color: NSColor = Design.textPrimary) -> NSMenuItem {
+            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+
+            let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 40))
+
+            // 标签
+            let labelField = NSTextField(frame: NSRect(x: 12, y: 20, width: 100, height: 14))
+            labelField.stringValue = label
+            labelField.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            labelField.textColor = Design.textMuted
+            containerView.addSubview(labelField)
+
+            // 数值
+            let valueField = NSTextField(frame: NSRect(x: 12, y: 4, width: 240, height: 18))
+            valueField.stringValue = value
+            valueField.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
+            valueField.textColor = color
+            containerView.addSubview(valueField)
+
+            item.view = containerView
+            return item
+        }
+
         // 随机问候语
         let greeting = greetings.randomElement() ?? "ccSwitch 用量统计"
         let greetingItem = createMenuItem(greeting)
         menu.addItem(greetingItem)
         menu.addItem(.separator())
 
-        // 今日统计
+        // 今日统计卡片
         if let stats = DataCache.shared.getCachedToday() {
-            let todayItem = NSMenuItem(title: "📊 今日: \(fmtTitle(stats.total))", action: #selector(openHourlyDetailToday), keyEquivalent: "t")
-            todayItem.keyEquivalentModifierMask = [.command]
+            // 今日总量（大数字）
+            let todayTotal = fmtTitle(stats.total)
+            let todayItem = createCardMenuItem(title: "📊 今日用量", subtitle: todayTotal,
+                                              icon: "📊", action: #selector(openHourlyDetailToday), keyEquivalent: "t")
             menu.addItem(todayItem)
 
-            let todayReqs = createMenuItem("  🔢 请求: \(stats.reqs)次")
-            menu.addItem(todayReqs)
-
-            // 缓存命中率
+            // 请求和缓存命中率
             let totalInput = stats.input + stats.cacheCreate + stats.cacheRead
             let cacheRate = totalInput > 0 ? Double(stats.cacheRead) / Double(totalInput) * 100 : 0
-            let cacheItem = createMenuItem("  💾 缓存命中: \(String(format: "%.1f", cacheRate))%")
-            menu.addItem(cacheItem)
+
+            let statsContainer = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 36))
+
+            // 请求数
+            let reqLabel = NSTextField(frame: NSRect(x: 12, y: 18, width: 80, height: 12))
+            reqLabel.stringValue = "请求数"
+            reqLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            reqLabel.textColor = Design.textMuted
+            statsContainer.addSubview(reqLabel)
+
+            let reqValue = NSTextField(frame: NSRect(x: 12, y: 4, width: 80, height: 16))
+            reqValue.stringValue = "\(stats.reqs)次"
+            reqValue.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            reqValue.textColor = Design.textPrimary
+            statsContainer.addSubview(reqValue)
+
+            // 缓存命中率
+            let cacheLabel = NSTextField(frame: NSRect(x: 100, y: 18, width: 80, height: 12))
+            cacheLabel.stringValue = "缓存命中"
+            cacheLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            cacheLabel.textColor = Design.textMuted
+            statsContainer.addSubview(cacheLabel)
+
+            let cacheValue = NSTextField(frame: NSRect(x: 100, y: 4, width: 80, height: 16))
+            cacheValue.stringValue = String(format: "%.1f%%", cacheRate)
+            cacheValue.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            cacheValue.textColor = cacheRate > 80 ? Design.successColor : Design.warningColor
+            statsContainer.addSubview(cacheValue)
 
             // 时长
             if let hours = queryWorkHours() {
-                let hoursItem = createMenuItem("  ⏱️ 时长: \(hours)h")
-                menu.addItem(hoursItem)
+                let hoursLabel = NSTextField(frame: NSRect(x: 188, y: 18, width: 80, height: 12))
+                hoursLabel.stringValue = "时长"
+                hoursLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+                hoursLabel.textColor = Design.textMuted
+                statsContainer.addSubview(hoursLabel)
+
+                let hoursValue = NSTextField(frame: NSRect(x: 188, y: 4, width: 80, height: 16))
+                hoursValue.stringValue = "\(hours)h"
+                hoursValue.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+                hoursValue.textColor = Design.textPrimary
+                statsContainer.addSubview(hoursValue)
             }
+
+            let statsItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+            statsItem.view = statsContainer
+            menu.addItem(statsItem)
         } else {
             if FileManager.default.fileExists(atPath: settings.dbPath) {
                 let noData = createMenuItem("📊 今日暂无数据")
                 menu.addItem(noData)
             } else {
-                let noDB = NSMenuItem(title: "🌶️ 未找到数据源，请去设置", action: #selector(openSettings), keyEquivalent: "")
+                let noDB = createCardMenuItem(title: "🌶️ 未找到数据源", subtitle: "请去设置",
+                                            icon: "🌶️", action: #selector(openSettings))
                 menu.addItem(noDB)
             }
         }
@@ -748,13 +1033,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 模型分布
         if let models = DataCache.shared.getCachedModelBreakdown(), !models.isEmpty {
-            let modelTitle = NSMenuItem(title: "🤖 模型分布", action: #selector(openModelDetailToday), keyEquivalent: "b")
-            modelTitle.keyEquivalentModifierMask = [.command]
+            let modelTitle = createCardMenuItem(title: "🤖 模型分布", subtitle: "点击查看详细",
+                                              icon: "🤖", action: #selector(openModelDetailToday), keyEquivalent: "b")
             menu.addItem(modelTitle)
 
+            // 显示前3个模型（带进度条样式）
+            let maxTotal = models.prefix(3).map { $0.total }.max() ?? 1
             for model in models.prefix(3) {
-                let modelName = model.model.count > 20 ? String(model.model.prefix(20)) + "..." : model.model
-                let modelItem = createMenuItem("  \(modelName): \(fmtK(model.total))")
+                let modelName = model.model.count > 18 ? String(model.model.prefix(18)) + "..." : model.model
+                let progress = CGFloat(model.total) / CGFloat(maxTotal)
+
+                let modelContainer = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
+
+                // 模型名称
+                let nameField = NSTextField(frame: NSRect(x: 24, y: 12, width: 150, height: 14))
+                nameField.stringValue = modelName
+                nameField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+                nameField.textColor = Design.textPrimary
+                modelContainer.addSubview(nameField)
+
+                // 数值
+                let valueField = NSTextField(frame: NSRect(x: 175, y: 12, width: 90, height: 14))
+                valueField.stringValue = Design.formatTokensK(model.total)
+                valueField.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+                valueField.textColor = Design.textSecondary
+                valueField.alignment = .right
+                modelContainer.addSubview(valueField)
+
+                // 进度条
+                let progressBar = ProgressBarView(frame: NSRect(x: 24, y: 4, width: 240, height: 8))
+                progressBar.progress = progress
+                progressBar.fillColor = Design.brandColor.withAlphaComponent(0.6)
+                modelContainer.addSubview(progressBar)
+
+                let modelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+                modelItem.view = modelContainer
                 menu.addItem(modelItem)
             }
 
@@ -763,52 +1076,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 昨日统计
         if let stats = DataCache.shared.getCachedYesterday() {
-            let yesterdayItem = NSMenuItem(title: "1️⃣ 昨日: \(fmtK(stats.total))", action: #selector(openHourlyDetailYesterday), keyEquivalent: "y")
-            yesterdayItem.keyEquivalentModifierMask = [.command]
+            let yesterdayItem = createCardMenuItem(title: "📅 昨日用量", subtitle: Design.formatTokensK(stats.total),
+                                                  icon: "📅", action: #selector(openHourlyDetailYesterday), keyEquivalent: "y")
             menu.addItem(yesterdayItem)
         }
 
         // 近7天统计
         if let stats = DataCache.shared.getCachedWeek() {
-            let weekItem = NSMenuItem(title: "7️⃣ 近7天: \(fmtK(stats.total))", action: #selector(openDetail), keyEquivalent: "w")
-            weekItem.keyEquivalentModifierMask = [.command]
+            let weekItem = createCardMenuItem(title: "📊 近7天用量", subtitle: Design.formatTokensK(stats.total),
+                                            icon: "📊", action: #selector(openDetail), keyEquivalent: "w")
             menu.addItem(weekItem)
         }
 
         // 近30天统计
         if let stats = DataCache.shared.getCachedMonth() {
-            let monthItem = NSMenuItem(title: "📆 近30天: \(fmtK(stats.total))", action: #selector(openMonthDetail), keyEquivalent: "m")
-            monthItem.keyEquivalentModifierMask = [.command]
+            let monthItem = createCardMenuItem(title: "📆 近30天用量", subtitle: Design.formatTokensK(stats.total),
+                                             icon: "📆", action: #selector(openMonthDetail), keyEquivalent: "m")
             menu.addItem(monthItem)
         }
 
         // 总量
         if let stats = DataCache.shared.getCachedTotal() {
-            let totalItem = NSMenuItem(title: "📊 总量: \(fmtTotal(stats.total))", action: #selector(openMonthDetail), keyEquivalent: "a")
-            totalItem.keyEquivalentModifierMask = [.command]
+            let totalItem = createCardMenuItem(title: "📊 历史总量", subtitle: Design.formatTokensK(stats.total),
+                                             icon: "📊", action: #selector(openMonthDetail), keyEquivalent: "a")
             menu.addItem(totalItem)
         }
 
         menu.addItem(.separator())
 
-        // 复制统计
-        let copyItem = NSMenuItem(title: "📋 复制今日统计", action: #selector(copyStats), keyEquivalent: "c")
-        copyItem.keyEquivalentModifierMask = [.command]
+        // 操作按钮
+        let copyItem = createCardMenuItem(title: "📋 复制今日统计", icon: "📋",
+                                        action: #selector(copyStats), keyEquivalent: "c")
         menu.addItem(copyItem)
 
-        // 刷新
-        let refreshItem = NSMenuItem(title: "🔄 刷新", action: #selector(refreshData), keyEquivalent: "r")
-        refreshItem.keyEquivalentModifierMask = [.command]
+        let refreshItem = createCardMenuItem(title: "🔄 刷新数据", icon: "🔄",
+                                           action: #selector(refreshData), keyEquivalent: "r")
         menu.addItem(refreshItem)
 
-        // 设置
-        let settingsItem = NSMenuItem(title: "⚙️ 设置", action: #selector(openSettings), keyEquivalent: ",")
-        settingsItem.keyEquivalentModifierMask = [.command]
+        let settingsItem = createCardMenuItem(title: "⚙️ 设置", icon: "⚙️",
+                                            action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(settingsItem)
 
         // 退出
-        let quitItem = NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q")
-        quitItem.keyEquivalentModifierMask = [.command]
+        let quitItem = createCardMenuItem(title: "❌ 退出", icon: "❌",
+                                        action: #selector(quit), keyEquivalent: "q")
         menu.addItem(quitItem)
 
         statusItem.menu = menu
