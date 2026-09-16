@@ -135,6 +135,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var detailWindow: DetailWindowController?
     var monthWindow: MonthDetailWindowController?
     var hourlyWindow: HourlyDetailWindowController?
+    var modelWindow: ModelDetailWindowController?
     var lastNotificationDate: Date?
     var currentHourlyDate: Date?
 
@@ -747,7 +748,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 模型分布
         if let models = DataCache.shared.getCachedModelBreakdown(), !models.isEmpty {
-            let modelTitle = createMenuItem("🤖 模型分布")
+            let modelTitle = NSMenuItem(title: "🤖 模型分布", action: #selector(openModelDetailToday), keyEquivalent: "b")
+            modelTitle.keyEquivalentModifierMask = [.command]
             menu.addItem(modelTitle)
 
             for model in models.prefix(3) {
@@ -954,6 +956,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         monthWindow?.showWindow(nil)
         monthWindow?.window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func openModelDetail(for date: Date) {
+        if modelWindow == nil {
+            modelWindow = ModelDetailWindowController()
+            modelWindow?.onDateChange = { [weak self] newDate in
+                self?.openModelDetail(for: newDate)
+            }
+        }
+        modelWindow?.db = db
+        modelWindow?.reloadData(db: db, date: date)
+        modelWindow?.showWindow(nil)
+        modelWindow?.window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    @objc func openModelDetailToday() {
+        openModelDetail(for: Date())
     }
 
     func openHourlyDetail(for date: Date) {
@@ -1796,6 +1816,320 @@ class MonthDetailWindowController: NSWindowController {
         // 合计行
         contentStack.addArrangedSubview(createSeparator())
         let totalRow = createRow(date: "合计", reqs: totalReqs, totalToken: totalToken, cacheRead: totalCacheRead, isBold: true)
+        contentStack.addArrangedSubview(totalRow)
+        totalRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+}
+
+// 模型分布详情窗口
+class ModelDetailWindowController: NSWindowController {
+    var contentStack: NSStackView!
+    var dateLabel: NSTextField!
+    var currentDate: Date = Date()
+    var onDateChange: ((Date) -> Void)?
+    var db: OpaquePointer?
+
+    convenience init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 450),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "模型分布详情"
+        window.center()
+        window.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+        window.minSize = NSSize(width: 500, height: 300)
+        self.init(window: window)
+        setupUI()
+    }
+
+    func setupUI() {
+        guard let contentView = window?.contentView else { return }
+
+        // 顶部导航栏
+        let navBar = NSView()
+        navBar.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(navBar)
+
+        NSLayoutConstraint.activate([
+            navBar.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 12),
+            navBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            navBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            navBar.heightAnchor.constraint(equalToConstant: 32)
+        ])
+
+        let prevBtn = NSButton(title: "◀", target: self, action: #selector(prevDay))
+        prevBtn.translatesAutoresizingMaskIntoConstraints = false
+        prevBtn.bezelStyle = .inline
+        prevBtn.font = NSFont.systemFont(ofSize: 14)
+        navBar.addSubview(prevBtn)
+
+        dateLabel = NSTextField(labelWithString: "")
+        dateLabel.translatesAutoresizingMaskIntoConstraints = false
+        dateLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+        dateLabel.textColor = NSColor.white
+        dateLabel.alignment = .center
+        navBar.addSubview(dateLabel)
+
+        let nextBtn = NSButton(title: "▶", target: self, action: #selector(nextDay))
+        nextBtn.translatesAutoresizingMaskIntoConstraints = false
+        nextBtn.bezelStyle = .inline
+        nextBtn.font = NSFont.systemFont(ofSize: 14)
+        navBar.addSubview(nextBtn)
+
+        NSLayoutConstraint.activate([
+            prevBtn.leadingAnchor.constraint(equalTo: navBar.leadingAnchor),
+            prevBtn.centerYAnchor.constraint(equalTo: navBar.centerYAnchor),
+            prevBtn.widthAnchor.constraint(equalToConstant: 30),
+            dateLabel.centerXAnchor.constraint(equalTo: navBar.centerXAnchor),
+            dateLabel.centerYAnchor.constraint(equalTo: navBar.centerYAnchor),
+            nextBtn.trailingAnchor.constraint(equalTo: navBar.trailingAnchor),
+            nextBtn.centerYAnchor.constraint(equalTo: navBar.centerYAnchor),
+            nextBtn.widthAnchor.constraint(equalToConstant: 30)
+        ])
+
+        // 滚动视图
+        let scrollView = NSScrollView()
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        scrollView.automaticallyAdjustsContentInsets = false
+        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
+        contentView.addSubview(scrollView)
+
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: navBar.bottomAnchor, constant: 0),
+            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
+        ])
+
+        contentStack = NSStackView()
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.spacing = 0
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let clipView = NSClipView()
+        clipView.documentView = contentStack
+        clipView.drawsBackground = false
+        scrollView.contentView = clipView
+
+        NSLayoutConstraint.activate([
+            contentStack.topAnchor.constraint(equalTo: clipView.topAnchor),
+            contentStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
+            contentStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor)
+        ])
+    }
+
+    @objc func prevDay() {
+        currentDate = Calendar.current.date(byAdding: .day, value: -1, to: currentDate)!
+        onDateChange?(currentDate)
+    }
+
+    @objc func nextDay() {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: currentDate)!
+        if tomorrow <= Date() {
+            currentDate = tomorrow
+            onDateChange?(currentDate)
+        }
+    }
+
+    func createRow(model: String, reqs: Int, totalToken: Int64, cacheRead: Int64, isBold: Bool = false) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: isBold ? 28 : 24).isActive = true
+
+        let modelField = NSTextField(labelWithString: model)
+        modelField.translatesAutoresizingMaskIntoConstraints = false
+        modelField.font = NSFont.systemFont(ofSize: isBold ? 12 : 11, weight: isBold ? .bold : .medium)
+        modelField.textColor = isBold ? NSColor.white : NSColor(red: 0.4, green: 0.8, blue: 1.0, alpha: 1.0)
+        modelField.maximumNumberOfLines = 1
+        modelField.lineBreakMode = .byTruncatingTail
+        container.addSubview(modelField)
+
+        let reqsField = NSTextField(labelWithString: reqs == 0 ? "-" : "\(reqs)次")
+        reqsField.translatesAutoresizingMaskIntoConstraints = false
+        reqsField.font = NSFont.monospacedDigitSystemFont(ofSize: isBold ? 12 : 11, weight: isBold ? .bold : .medium)
+        reqsField.textColor = reqs == 0 ? NSColor(white: 0.4, alpha: 1.0) : NSColor.white
+        reqsField.alignment = .right
+        container.addSubview(reqsField)
+
+        let totalField = NSTextField(labelWithString: fmtNum(totalToken))
+        totalField.translatesAutoresizingMaskIntoConstraints = false
+        totalField.font = NSFont.monospacedDigitSystemFont(ofSize: isBold ? 12 : 11, weight: isBold ? .bold : .medium)
+        totalField.textColor = totalToken == 0 ? NSColor(white: 0.4, alpha: 1.0) : NSColor.white
+        totalField.alignment = .right
+        container.addSubview(totalField)
+
+        let cacheField = NSTextField(labelWithString: fmtNum(cacheRead))
+        cacheField.translatesAutoresizingMaskIntoConstraints = false
+        cacheField.font = NSFont.monospacedDigitSystemFont(ofSize: isBold ? 12 : 11, weight: isBold ? .bold : .medium)
+        cacheField.textColor = cacheRead == 0 ? NSColor(white: 0.4, alpha: 1.0) : (isBold ? NSColor.white : NSColor(white: 0.7, alpha: 1.0))
+        cacheField.alignment = .right
+        container.addSubview(cacheField)
+
+        NSLayoutConstraint.activate([
+            modelField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            modelField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            modelField.widthAnchor.constraint(equalToConstant: 200),
+
+            reqsField.leadingAnchor.constraint(equalTo: modelField.trailingAnchor, constant: 8),
+            reqsField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            reqsField.widthAnchor.constraint(equalToConstant: 80),
+
+            totalField.leadingAnchor.constraint(equalTo: reqsField.trailingAnchor, constant: 8),
+            totalField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            totalField.widthAnchor.constraint(equalToConstant: 120),
+
+            cacheField.leadingAnchor.constraint(equalTo: totalField.trailingAnchor, constant: 8),
+            cacheField.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            cacheField.widthAnchor.constraint(equalToConstant: 120),
+            cacheField.trailingAnchor.constraint(equalTo: container.trailingAnchor)
+        ])
+
+        return container
+    }
+
+    func createHeaderRow() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 28).isActive = true
+
+        let labels = ["模型", "请求数", "总token", "缓存读"]
+        let widths: [CGFloat] = [200, 80, 120, 120]
+        var leadingAnchor = container.leadingAnchor
+
+        for (index, text) in labels.enumerated() {
+            let label = NSTextField(labelWithString: text)
+            label.translatesAutoresizingMaskIntoConstraints = false
+            label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
+            label.textColor = NSColor(white: 0.6, alpha: 1.0)
+            label.alignment = index == 0 ? .left : .right
+            container.addSubview(label)
+
+            NSLayoutConstraint.activate([
+                label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: index == 0 ? 0 : 8),
+                label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                label.widthAnchor.constraint(equalToConstant: widths[index])
+            ])
+
+            if index < labels.count - 1 {
+                leadingAnchor = label.trailingAnchor
+            }
+        }
+
+        return container
+    }
+
+    func createSeparator() -> NSView {
+        let sep = NSBox()
+        sep.boxType = .separator
+        sep.borderColor = NSColor(white: 0.25, alpha: 1.0)
+        sep.translatesAutoresizingMaskIntoConstraints = false
+        sep.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return sep
+    }
+
+    func fmtNum(_ n: Int64) -> String {
+        if n >= 100_000_000 {
+            return String(format: "%.1f亿", Double(n) / 100_000_000)
+        } else if n >= 10_000 {
+            return "\(n / 10_000)万"
+        } else if n == 0 {
+            return "-"
+        } else {
+            return "\(n)"
+        }
+    }
+
+    func reloadData(db: OpaquePointer?, date: Date) {
+        guard let db = db else { return }
+
+        currentDate = date
+
+        // 更新日期标签
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yy-MM-dd"
+        dateLabel.stringValue = formatter.string(from: date)
+
+        // 计算 daysAgo
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        let targetDay = calendar.startOfDay(for: date)
+        let daysAgo = calendar.dateComponents([.day], from: targetDay, to: today).day ?? 0
+
+        // 查询模型分布
+        let sql = """
+        SELECT
+            model,
+            COUNT(*) as reqs,
+            COALESCE(SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens), 0) as total_token,
+            COALESCE(SUM(cache_read_tokens), 0) as cache_read
+        FROM proxy_request_logs
+        WHERE date(created_at, 'unixepoch', 'localtime') = date('now', 'localtime', '-' || ? || ' days')
+        GROUP BY model
+        ORDER BY total_token DESC
+        """
+
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        sqlite3_bind_int(stmt, 1, Int32(daysAgo))
+
+        var models: [(model: String, reqs: Int, totalToken: Int64, cacheRead: Int64)] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let model = String(cString: sqlite3_column_text(stmt, 0))
+            let reqs = Int(sqlite3_column_int(stmt, 1))
+            let totalToken = sqlite3_column_int64(stmt, 2)
+            let cacheRead = sqlite3_column_int64(stmt, 3)
+            models.append((model, reqs, totalToken, cacheRead))
+        }
+        sqlite3_finalize(stmt)
+
+        // 清空旧内容
+        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        if models.isEmpty {
+            let noDataLabel = NSTextField(labelWithString: "暂无数据")
+            noDataLabel.font = NSFont.systemFont(ofSize: 14, weight: .medium)
+            noDataLabel.textColor = NSColor(white: 0.6, alpha: 1.0)
+            contentStack.addArrangedSubview(noDataLabel)
+            return
+        }
+
+        // 标题行
+        let headerRow = createHeaderRow()
+        contentStack.addArrangedSubview(headerRow)
+        headerRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+        contentStack.addArrangedSubview(createSeparator())
+
+        // 计算合计
+        var totalReqs = 0
+        var totalToken: Int64 = 0
+        var totalCacheRead: Int64 = 0
+        for model in models {
+            totalReqs += model.reqs
+            totalToken += model.totalToken
+            totalCacheRead += model.cacheRead
+        }
+
+        // 数据行
+        for model in models {
+            let row = createRow(
+                model: model.model,
+                reqs: model.reqs,
+                totalToken: model.totalToken,
+                cacheRead: model.cacheRead
+            )
+            contentStack.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+        }
+
+        // 合计行
+        contentStack.addArrangedSubview(createSeparator())
+        let totalRow = createRow(model: "合计", reqs: totalReqs, totalToken: totalToken, cacheRead: totalCacheRead, isBold: true)
         contentStack.addArrangedSubview(totalRow)
         totalRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
     }
