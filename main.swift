@@ -1889,37 +1889,19 @@ class ModelDetailWindowController: NSWindowController {
             nextBtn.widthAnchor.constraint(equalToConstant: 30)
         ])
 
-        // 滚动视图
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        contentView.addSubview(scrollView)
-
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: navBar.bottomAnchor, constant: 0),
-            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
-        ])
-
+        // 直接使用栈视图，不需要滚动
         contentStack = NSStackView()
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 0
         contentStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let clipView = NSClipView()
-        clipView.documentView = contentStack
-        clipView.drawsBackground = false
-        scrollView.contentView = clipView
+        contentView.addSubview(contentStack)
 
         NSLayoutConstraint.activate([
-            contentStack.topAnchor.constraint(equalTo: clipView.topAnchor),
-            contentStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor)
+            contentStack.topAnchor.constraint(equalTo: navBar.bottomAnchor, constant: 4),
+            contentStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            contentStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -12)
         ])
     }
 
@@ -2207,37 +2189,19 @@ class HourlyDetailWindowController: NSWindowController {
             nextBtn.widthAnchor.constraint(equalToConstant: 30)
         ])
 
-        // 滚动视图
-        let scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.hasVerticalScroller = true
-        scrollView.drawsBackground = false
-        scrollView.automaticallyAdjustsContentInsets = false
-        scrollView.contentInsets = NSEdgeInsets(top: 0, left: 0, bottom: 0, right: 0)
-        contentView.addSubview(scrollView)
-
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: navBar.bottomAnchor, constant: 0),
-            scrollView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
-            scrollView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
-            scrollView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -12)
-        ])
-
+        // 直接使用栈视图，不需要滚动
         contentStack = NSStackView()
         contentStack.orientation = .vertical
         contentStack.alignment = .leading
         contentStack.spacing = 0
         contentStack.translatesAutoresizingMaskIntoConstraints = false
-
-        let clipView = NSClipView()
-        clipView.documentView = contentStack
-        clipView.drawsBackground = false
-        scrollView.contentView = clipView
+        contentView.addSubview(contentStack)
 
         NSLayoutConstraint.activate([
-            contentStack.topAnchor.constraint(equalTo: clipView.topAnchor),
-            contentStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor)
+            contentStack.topAnchor.constraint(equalTo: navBar.bottomAnchor, constant: 4),
+            contentStack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            contentStack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            contentStack.bottomAnchor.constraint(lessThanOrEqualTo: contentView.bottomAnchor, constant: -12)
         ])
     }
 
