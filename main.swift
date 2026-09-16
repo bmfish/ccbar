@@ -668,9 +668,24 @@ class PopoverViewController: NSViewController {
             contentStack.addArrangedSubview(headerView)
             headerView.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
 
+            // 模型配色（与环形图一致）
+            let modelColors: [NSColor] = [
+                Design.brandColor,
+                NSColor.systemBlue,
+                NSColor.systemGreen,
+                NSColor.systemOrange,
+                NSColor.systemPurple,
+                NSColor.systemPink
+            ]
+
             let maxTotal = models.prefix(3).map { $0.total }.max() ?? 1
-            for model in models.prefix(3) {
-                addCompactModelBar(name: model.model, value: model.total, maxValue: maxTotal)
+            for (index, model) in models.prefix(3).enumerated() {
+                addCompactModelBar(
+                    name: model.model,
+                    value: model.total,
+                    maxValue: maxTotal,
+                    color: modelColors[index % modelColors.count]
+                )
             }
 
             addSeparator()
@@ -789,21 +804,29 @@ class PopoverViewController: NSViewController {
         parent.addSubview(container)
     }
 
-    private func addCompactModelBar(name: String, value: Int64, maxValue: Int64) {
+    private func addCompactModelBar(name: String, value: Int64, maxValue: Int64, color: NSColor) {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
-        container.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        container.heightAnchor.constraint(equalToConstant: 36).isActive = true  // 增加高度，不再拥挤
 
-        let shortName = name.count > 14 ? String(name.prefix(14)) + "..." : name
+        let shortName = name.count > 16 ? String(name.prefix(16)) + "..." : name
+
+        // 颜色圆点
+        let dot = NSView()
+        dot.translatesAutoresizingMaskIntoConstraints = false
+        dot.wantsLayer = true
+        dot.layer?.backgroundColor = color.cgColor
+        dot.layer?.cornerRadius = 3
+        container.addSubview(dot)
 
         let nameLabel = NSTextField(labelWithString: shortName)
-        nameLabel.font = NSFont.systemFont(ofSize: 10, weight: .medium)
+        nameLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
         nameLabel.textColor = Design.textPrimary
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(nameLabel)
 
         let valueLabel = NSTextField(labelWithString: Design.formatTokensK(value))
-        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 10, weight: .regular)
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         valueLabel.textColor = Design.textSecondary
         valueLabel.alignment = .right
         valueLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -811,19 +834,31 @@ class PopoverViewController: NSViewController {
 
         let progressBar = ProgressBarView()
         progressBar.progress = maxValue > 0 ? CGFloat(value) / CGFloat(maxValue) : 0
+        progressBar.fillColor = color  // 使用模型专属颜色
         progressBar.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(progressBar)
 
         NSLayoutConstraint.activate([
-            nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            nameLabel.topAnchor.constraint(equalTo: container.topAnchor),
-            nameLabel.widthAnchor.constraint(equalToConstant: 100),
+            // 颜色圆点
+            dot.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            dot.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+            dot.widthAnchor.constraint(equalToConstant: 6),
+            dot.heightAnchor.constraint(equalToConstant: 6),
+
+            // 模型名
+            nameLabel.leadingAnchor.constraint(equalTo: dot.trailingAnchor, constant: 6),
+            nameLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: valueLabel.leadingAnchor, constant: -8),
+
+            // 数值
             valueLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            valueLabel.topAnchor.constraint(equalTo: container.topAnchor),
-            progressBar.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 3),
+            valueLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
+
+            // 进度条
+            progressBar.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 7),
             progressBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             progressBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            progressBar.heightAnchor.constraint(equalToConstant: 5)
+            progressBar.heightAnchor.constraint(equalToConstant: 6)
         ])
 
         contentStack.addArrangedSubview(container)
@@ -1039,7 +1074,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func showPopover() {
         if popover == nil {
             let popover = NSPopover()
-            popover.contentSize = NSSize(width: 300, height: 380)  // 减小高度
+            popover.contentSize = NSSize(width: 300, height: 420)  // 适配更高的模型栏
             popover.behavior = .applicationDefined  // 改用手动控制
             popover.animates = true
             popover.delegate = self
