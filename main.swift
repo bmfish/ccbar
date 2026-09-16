@@ -328,7 +328,7 @@ class PopoverViewController: NSViewController {
         contentStack.alignment = .leading
         contentStack.spacing = 2  // 减小间距
         contentStack.translatesAutoresizingMaskIntoConstraints = false
-        contentStack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+        contentStack.edgeInsets = NSEdgeInsets(top: 8, left: 12, bottom: 2, right: 12)  // 减小底部内边距
 
         let clipView = NSClipView()
         clipView.documentView = contentStack
@@ -859,7 +859,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func showPopover() {
         if popover == nil {
             let popover = NSPopover()
-            popover.contentSize = NSSize(width: 300, height: 420)
+            popover.contentSize = NSSize(width: 300, height: 380)  // 减小高度
             popover.behavior = .applicationDefined  // 改用手动控制
             popover.animates = true
             popover.delegate = self
