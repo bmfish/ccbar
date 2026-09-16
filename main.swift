@@ -35,6 +35,62 @@ enum Design {
     static let warningColor = NSColor.systemOrange
     static let errorColor = NSColor.systemRed
 
+    // MARK: - 用量色阶（浅绿 → 黄 → 橙 → 红）
+
+    /// 用量色阶的关键色（按进度 0.0 ~ 1.0 排列）
+    private static let usageStops: [(pos: CGFloat, color: NSColor)] = [
+        (0.00, NSColor(red: 0.42, green: 0.85, blue: 0.62, alpha: 1.0)),  // 浅绿
+        (0.35, NSColor(red: 0.65, green: 0.87, blue: 0.45, alpha: 1.0)),  // 黄绿
+        (0.60, NSColor(red: 0.95, green: 0.80, blue: 0.35, alpha: 1.0)),  // 黄
+        (0.82, NSColor(red: 0.95, green: 0.58, blue: 0.28, alpha: 1.0)),  // 橙
+        (1.00, NSColor(red: 0.90, green: 0.28, blue: 0.30, alpha: 1.0)),  // 红
+    ]
+
+    /// 按用量占总量的比例取色（progress: 0.0 浅绿 → 1.0 红）
+    static func usageColor(progress: CGFloat) -> NSColor {
+        let p = min(max(progress, 0), 1)
+
+        // 找到所在区间
+        for i in 0..<(usageStops.count - 1) {
+            let a = usageStops[i]
+            let b = usageStops[i + 1]
+            if p <= b.pos {
+                let span = b.pos - a.pos
+                let t = span > 0 ? (p - a.pos) / span : 0
+                guard let c1 = a.color.usingColorSpace(.sRGB),
+                      let c2 = b.color.usingColorSpace(.sRGB) else { return a.color }
+                return NSColor(
+                    red:   c1.redComponent   + (c2.redComponent   - c1.redComponent)   * t,
+                    green: c1.greenComponent + (c2.greenComponent - c1.greenComponent) * t,
+                    blue:  c1.blueComponent  + (c2.blueComponent  - c1.blueComponent)  * t,
+                    alpha: 1.0
+                )
+            }
+        }
+        return usageStops.last!.color
+    }
+
+    /// 根据今日用量和预警阈值计算颜色
+    ///
+    /// 色阶锚点（以预警阈值为参照）：
+    /// - 0.25× 阈值 → 浅绿
+    /// - 0.75× 阈值 → 黄
+    /// - 1.00× 阈值 → 橙红（刚好达到预警线）
+    /// - ≥1.2× 阈值 → 正红
+    ///
+    /// - Parameters:
+    ///   - total: 今日 token 总量
+    ///   - thresholdWan: 预警阈值（万为单位，来自设置）
+    static func usageColor(total: Int64, thresholdWan: Int) -> NSColor {
+        let threshold = Double(thresholdWan) * 10_000
+        guard threshold > 0 else { return usageStops.first!.color }
+
+        // 阈值对应 0.83 进度（橙红），1.2× 阈值对应满格红色
+        let rawProgress = Double(total) / threshold
+        let progress = rawProgress / 1.2
+        return usageColor(progress: CGFloat(min(progress, 1.0)))
+    }
+
     // 格式化数字
     static func formatTokens(_ n: Int64) -> String {
         if n >= 100_000_000 {
@@ -685,7 +741,9 @@ class PopoverViewController: NSViewController {
             // 大数字
             let bigNumber = NSTextField(labelWithString: Design.formatTokens(today.total))
             bigNumber.font = NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .bold)
-            bigNumber.textColor = Design.brandColor
+            // 颜色随用量变化：浅绿 → 黄 → 橙 → 红（按预警阈值为满格）
+            let thresholdWan = AppDelegate.shared?.settings.warningThreshold ?? 50
+            bigNumber.textColor = Design.usageColor(total: today.total, thresholdWan: thresholdWan)
             contentStack.addArrangedSubview(bigNumber)
 
             // 三列统计 - 使用 Auto Layout，增加高度
