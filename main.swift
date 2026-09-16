@@ -59,11 +59,53 @@ enum Design {
 
 // MARK: - 自定义视图组件
 
-/// Sparkline 小图表
+/// Sparkline 小图表（支持渐变色折线）
 class SparklineView: NSView {
     var values: [CGFloat] = []
     var lineColor: NSColor = Design.brandColor
     var fillColor: NSColor = Design.brandColor.withAlphaComponent(0.15)
+
+    /// 渐变模式：折线按位置取渐变色
+    var useGradient: Bool = false
+    /// 色相偏移（0.0 ~ 1.0），让不同时间段的图表呈现不同色系
+    var hueOffset: CGFloat = 0
+    /// 渐变色带
+    var gradientColors: [NSColor] = [
+        NSColor(red: 0.35, green: 0.55, blue: 0.95, alpha: 1.0),  // 蓝
+        NSColor(red: 0.40, green: 0.78, blue: 0.75, alpha: 1.0),  // 青
+        NSColor(red: 0.45, green: 0.82, blue: 0.50, alpha: 1.0),  // 绿
+        NSColor(red: 0.95, green: 0.78, blue: 0.35, alpha: 1.0),  // 黄
+        Design.brandColor,                                         // 橙
+        NSColor(red: 0.90, green: 0.45, blue: 0.60, alpha: 1.0)   // 粉
+    ]
+
+    /// 在渐变色带上按进度取色，并按 hueOffset 旋转色相
+    private func gradientColor(at progress: CGFloat) -> NSColor {
+        guard gradientColors.count >= 2 else { return lineColor }
+        let p = min(max(progress, 0), 1)
+        let scaled = p * CGFloat(gradientColors.count - 1)
+        let idx = min(Int(scaled), gradientColors.count - 2)
+        let t = scaled - CGFloat(idx)
+
+        guard let c1 = gradientColors[idx].usingColorSpace(.sRGB),
+              let c2 = gradientColors[idx + 1].usingColorSpace(.sRGB) else {
+            return gradientColors[idx]
+        }
+
+        let r = c1.redComponent   + (c2.redComponent   - c1.redComponent)   * t
+        let g = c1.greenComponent + (c2.greenComponent - c1.greenComponent) * t
+        let b = c1.blueComponent  + (c2.blueComponent  - c1.blueComponent)  * t
+
+        guard hueOffset != 0 else {
+            return NSColor(red: r, green: g, blue: b, alpha: 1.0)
+        }
+
+        let base = NSColor(red: r, green: g, blue: b, alpha: 1.0).usingColorSpace(.sRGB) ?? NSColor.white
+        var h: CGFloat = 0, s: CGFloat = 0, br: CGFloat = 0, a: CGFloat = 0
+        base.getHue(&h, saturation: &s, brightness: &br, alpha: &a)
+        return NSColor(hue: (h + hueOffset).truncatingRemainder(dividingBy: 1.0),
+                       saturation: s, brightness: br, alpha: 1.0)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
@@ -75,8 +117,9 @@ class SparklineView: NSView {
         let range = maxVal - minVal
 
         let stepX = bounds.width / CGFloat(values.count - 1)
-        let padding: CGFloat = 2
+        let padding: CGFloat = 4
         let availableHeight = bounds.height - padding * 2
+        let count = values.count
 
         // 计算点
         var points: [NSPoint] = []
@@ -87,7 +130,7 @@ class SparklineView: NSView {
             points.append(NSPoint(x: x, y: y))
         }
 
-        // 绘制填充区域
+        // 填充区域（垂直渐变，从线的颜色淡出到底部）
         let fillPath = NSBezierPath()
         fillPath.move(to: NSPoint(x: points[0].x, y: padding))
         for point in points {
@@ -95,29 +138,57 @@ class SparklineView: NSView {
         }
         fillPath.line(to: NSPoint(x: points.last!.x, y: padding))
         fillPath.close()
-        fillColor.setFill()
-        fillPath.fill()
 
-        // 绘制线条
-        let linePath = NSBezierPath()
-        linePath.lineWidth = 1.5
-        linePath.lineJoinStyle = .round
-        linePath.lineCapStyle = .round
-        linePath.move(to: points[0])
-        for point in points.dropFirst() {
-            linePath.line(to: point)
+        let topColor: NSColor
+        if useGradient {
+            topColor = gradientColor(at: 0.5).withAlphaComponent(0.22)
+        } else {
+            topColor = fillColor
         }
-        lineColor.setStroke()
-        linePath.stroke()
+        let bottomColor = topColor.withAlphaComponent(0.0)
 
-        // 绘制终点圆点
+        if let gradient = NSGradient(starting: topColor, ending: bottomColor) {
+            gradient.draw(in: fillPath, angle: 90)
+        } else {
+            topColor.setFill()
+            fillPath.fill()
+        }
+
+        // 绘制折线：逐段取渐变色，圆角连接保证平滑
+        for i in 0..<(count - 1) {
+            let segment = NSBezierPath()
+            segment.lineWidth = 2
+            segment.lineCapStyle = .round
+            segment.lineJoinStyle = .round
+            segment.move(to: points[i])
+            segment.line(to: points[i + 1])
+
+            let color: NSColor
+            if useGradient {
+                let progress = count > 1 ? CGFloat(i) / CGFloat(count - 1) : 0.5
+                color = gradientColor(at: progress)
+            } else {
+                color = lineColor
+            }
+            color.setStroke()
+            segment.stroke()
+        }
+
+        // 绘制终点圆点（用最后一个点的颜色）
         if let lastPoint = points.last {
-            let dotRadius: CGFloat = 3
+            let dotRadius: CGFloat = 3.5
             let dotRect = NSRect(x: lastPoint.x - dotRadius, y: lastPoint.y - dotRadius,
                                width: dotRadius * 2, height: dotRadius * 2)
             let dotPath = NSBezierPath(ovalIn: dotRect)
-            lineColor.setFill()
+            let endColor = useGradient ? gradientColor(at: 1.0) : lineColor
+            endColor.setFill()
             dotPath.fill()
+
+            // 外圈描边增强可见性
+            let ringPath = NSBezierPath(ovalIn: dotRect.insetBy(dx: -2, dy: -2))
+            ringPath.lineWidth = 1.5
+            endColor.withAlphaComponent(0.35).setStroke()
+            ringPath.stroke()
         }
     }
 }
@@ -2451,6 +2522,10 @@ class DetailWindowController: NSWindowController {
         // 创建 sparkline 趋势图
         let sparkline = SparklineView(frame: NSRect(x: 8, y: 8, width: 400, height: 44))
         sparkline.values = dailyTokens
+        sparkline.useGradient = true
+        // 按周次偏移色相，翻到不同周颜色会变化
+        let weekOfYear = calendar.ordinality(of: .weekOfYear, in: .year, for: weekStart) ?? 0
+        sparkline.hueOffset = CGFloat(weekOfYear % 8) / 8.0
         sparkline.translatesAutoresizingMaskIntoConstraints = false
         chartContainer.addSubview(sparkline)
 
@@ -2704,6 +2779,15 @@ class MonthDetailWindowController: NSWindowController {
         // 清空旧内容
         contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
+        // 添加折线图容器（整月的日趋势）
+        let chartContainer = NSView()
+        chartContainer.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.heightAnchor.constraint(equalToConstant: 70).isActive = true
+        contentStack.addArrangedSubview(chartContainer)
+        chartContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+        contentStack.addArrangedSubview(createSeparator())
+
         // 标题行
         let headerRow = createHeaderRow()
         contentStack.addArrangedSubview(headerRow)
@@ -2715,6 +2799,7 @@ class MonthDetailWindowController: NSWindowController {
         var totalReqs = 0
         var totalToken: Int64 = 0
         var totalCacheRead: Int64 = 0
+        var dailyTokens: [CGFloat] = []  // 用于折线图
 
         let today = calendar.startOfDay(for: Date())
 
@@ -2774,7 +2859,28 @@ class MonthDetailWindowController: NSWindowController {
             let row = createRow(date: dateStr, reqs: reqs, totalToken: dayToken, cacheRead: cacheRead)
             contentStack.addArrangedSubview(row)
             row.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+            // 收集数据用于折线图
+            dailyTokens.append(CGFloat(dayToken))
         }
+
+        // 创建折线图（整月趋势）
+        let sparkline = SparklineView(frame: NSRect(x: 8, y: 8, width: 400, height: 54))
+        sparkline.values = dailyTokens
+        sparkline.useGradient = true
+        // 按月偏移色相，翻到不同月份颜色会变化
+        if let month = components.month {
+            sparkline.hueOffset = CGFloat((month * 3) % 8) / 8.0
+        }
+        sparkline.translatesAutoresizingMaskIntoConstraints = false
+        chartContainer.addSubview(sparkline)
+
+        NSLayoutConstraint.activate([
+            sparkline.topAnchor.constraint(equalTo: chartContainer.topAnchor, constant: 8),
+            sparkline.leadingAnchor.constraint(equalTo: chartContainer.leadingAnchor, constant: 8),
+            sparkline.trailingAnchor.constraint(equalTo: chartContainer.trailingAnchor, constant: -8),
+            sparkline.bottomAnchor.constraint(equalTo: chartContainer.bottomAnchor, constant: -8)
+        ])
 
         // 合计行
         contentStack.addArrangedSubview(createSeparator())
