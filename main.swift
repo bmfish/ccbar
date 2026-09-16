@@ -1710,6 +1710,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc func openDetail() {
+        closePopover()
         if detailWindow == nil {
             detailWindow = DetailWindowController()
             detailWindow?.onDateChange = { [weak self] newWeekStart in
@@ -1740,6 +1741,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     @objc func openMonthDetail() {
+        closePopover()
         if monthWindow == nil {
             monthWindow = MonthDetailWindowController()
         }
@@ -1752,6 +1754,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func openModelDetail(for date: Date) {
+        closePopover()
         if modelWindow == nil {
             modelWindow = ModelDetailWindowController()
             modelWindow?.onDateChange = { [weak self] newDate in
@@ -1770,6 +1773,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     func openHourlyDetail(for date: Date) {
+        closePopover()
         if hourlyWindow == nil {
             hourlyWindow = HourlyDetailWindowController()
             hourlyWindow?.onDateChange = { [weak self] newDate in
