@@ -1634,13 +1634,14 @@ class SettingsWindowController: NSWindowController {
         self.onSave = onSave
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 460),
+            contentRect: NSRect(x: 0, y: 0, width: 480, height: 380),
             styleMask: [.titled, .closable],
             backing: .buffered,
             defer: false
         )
         window.title = "ccBar 设置"
         window.center()
+        window.backgroundColor = Design.backgroundDark
 
         super.init(window: window)
 
@@ -1655,98 +1656,177 @@ class SettingsWindowController: NSWindowController {
     func setupUI() {
         guard let contentView = window?.contentView else { return }
 
-        var y: CGFloat = 380
+        let stackView = NSStackView()
+        stackView.orientation = .vertical
+        stackView.alignment = .leading
+        stackView.spacing = 16
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            stackView.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 24),
+            stackView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 24),
+            stackView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -24)
+        ])
+
+        // 标题
+        let titleLabel = NSTextField(labelWithString: "⚙️ 设置")
+        titleLabel.font = NSFont.systemFont(ofSize: 18, weight: .semibold)
+        titleLabel.textColor = Design.textPrimary
+        stackView.addArrangedSubview(titleLabel)
+
+        // 分隔线
+        let separator1 = NSBox()
+        separator1.boxType = .separator
+        stackView.addArrangedSubview(separator1)
+        separator1.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
 
         // 刷新间隔
-        let intervalLabel = NSTextField(labelWithString: "刷新间隔 (秒):")
-        intervalLabel.frame = NSRect(x: 20, y: y, width: 120, height: 22)
-        contentView.addSubview(intervalLabel)
-
-        intervalField = NSTextField(frame: NSRect(x: 150, y: y, width: 80, height: 22))
-        contentView.addSubview(intervalField)
-
-        let intervalHint = NSTextField(labelWithString: "范围: 5 - 3000")
-        intervalHint.frame = NSRect(x: 240, y: y, width: 200, height: 22)
-        intervalHint.textColor = .secondaryLabelColor
-        contentView.addSubview(intervalHint)
-
-        y -= 50
+        let intervalRow = createSettingRow(label: "刷新间隔 (秒):", hint: "范围: 5 - 3000")
+        intervalField = intervalRow.field
+        stackView.addArrangedSubview(intervalRow.container)
+        intervalRow.container.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
 
         // 数据库路径
-        let pathLabel = NSTextField(labelWithString: "数据库路径:")
-        pathLabel.frame = NSRect(x: 20, y: y, width: 120, height: 22)
-        contentView.addSubview(pathLabel)
+        let pathRow = createPathRow()
+        pathField = pathRow.field
+        stackView.addArrangedSubview(pathRow.container)
+        pathRow.container.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
 
-        pathField = NSTextField(frame: NSRect(x: 150, y: y, width: 220, height: 22))
-        pathField.lineBreakMode = .byTruncatingMiddle
-        contentView.addSubview(pathField)
+        // 预警阈值
+        let warningRow = createSettingRow(label: "预警阈值 (万):", hint: "超过此值将弹出通知提醒")
+        warningField = warningRow.field
+        stackView.addArrangedSubview(warningRow.container)
+        warningRow.container.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
+
+        // 分隔线
+        let separator2 = NSBox()
+        separator2.boxType = .separator
+        stackView.addArrangedSubview(separator2)
+        separator2.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
+
+        // 复选框
+        warningCheck = NSButton(checkboxWithTitle: "启用用量预警", target: nil, action: nil)
+        warningCheck.font = NSFont.systemFont(ofSize: 13)
+        stackView.addArrangedSubview(warningCheck)
+
+        launchCheck = NSButton(checkboxWithTitle: "开机自动启动", target: nil, action: nil)
+        launchCheck.font = NSFont.systemFont(ofSize: 13)
+        stackView.addArrangedSubview(launchCheck)
+
+        // 分隔线
+        let separator3 = NSBox()
+        separator3.boxType = .separator
+        stackView.addArrangedSubview(separator3)
+        separator3.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
+
+        // 按钮栏
+        let buttonBar = NSStackView()
+        buttonBar.orientation = .horizontal
+        buttonBar.spacing = 12
+        buttonBar.translatesAutoresizingMaskIntoConstraints = false
+        stackView.addArrangedSubview(buttonBar)
+        buttonBar.trailingAnchor.constraint(equalTo: stackView.trailingAnchor).isActive = true
+
+        let resetBtn = NSButton(title: "重置", target: self, action: #selector(resetSettings))
+        resetBtn.bezelStyle = .rounded
+        resetBtn.font = NSFont.systemFont(ofSize: 13)
+        buttonBar.addArrangedSubview(resetBtn)
+
+        let saveBtn = NSButton(title: "保存", target: self, action: #selector(saveSettings))
+        saveBtn.bezelStyle = .rounded
+        saveBtn.keyEquivalent = "\r"  // Enter 键快捷键
+        saveBtn.font = NSFont.systemFont(ofSize: 13)
+        buttonBar.addArrangedSubview(saveBtn)
+    }
+
+    private func createSettingRow(label: String, hint: String) -> (container: NSView, field: NSTextField) {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let labelField = NSTextField(labelWithString: label)
+        labelField.font = NSFont.systemFont(ofSize: 13)
+        labelField.textColor = Design.textPrimary
+        labelField.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(labelField)
+
+        let field = NSTextField()
+        field.font = NSFont.systemFont(ofSize: 13)
+        field.textColor = Design.textPrimary
+        field.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(field)
+
+        let hintField = NSTextField(labelWithString: hint)
+        hintField.font = NSFont.systemFont(ofSize: 11)
+        hintField.textColor = Design.textMuted
+        hintField.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hintField)
+
+        NSLayoutConstraint.activate([
+            labelField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            labelField.topAnchor.constraint(equalTo: container.topAnchor),
+            labelField.widthAnchor.constraint(equalToConstant: 120),
+
+            field.leadingAnchor.constraint(equalTo: labelField.trailingAnchor, constant: 8),
+            field.topAnchor.constraint(equalTo: container.topAnchor),
+            field.widthAnchor.constraint(equalToConstant: 100),
+
+            hintField.leadingAnchor.constraint(equalTo: field.trailingAnchor, constant: 8),
+            hintField.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            hintField.centerYAnchor.constraint(equalTo: field.centerYAnchor)
+        ])
+
+        container.heightAnchor.constraint(equalToConstant: 22).isActive = true
+
+        return (container, field)
+    }
+
+    private func createPathRow() -> (container: NSView, field: NSTextField) {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let labelField = NSTextField(labelWithString: "数据库路径:")
+        labelField.font = NSFont.systemFont(ofSize: 13)
+        labelField.textColor = Design.textPrimary
+        labelField.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(labelField)
+
+        let field = NSTextField()
+        field.font = NSFont.systemFont(ofSize: 13)
+        field.textColor = Design.textPrimary
+        field.lineBreakMode = .byTruncatingMiddle
+        field.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(field)
 
         let browseBtn = NSButton(title: "浏览", target: self, action: #selector(browsePath))
-        browseBtn.frame = NSRect(x: 380, y: y, width: 60, height: 22)
-        contentView.addSubview(browseBtn)
+        browseBtn.bezelStyle = .rounded
+        browseBtn.font = NSFont.systemFont(ofSize: 12)
+        browseBtn.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(browseBtn)
 
-        y -= 25
+        NSLayoutConstraint.activate([
+            labelField.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            labelField.topAnchor.constraint(equalTo: container.topAnchor),
+            labelField.widthAnchor.constraint(equalToConstant: 120),
 
-        // 路径提示
-        let pathHint = NSTextField(labelWithString: "默认: ~/.cc-switch/cc-switch.db")
-        pathHint.frame = NSRect(x: 150, y: y, width: 300, height: 18)
-        pathHint.textColor = .secondaryLabelColor
-        pathHint.font = NSFont.systemFont(ofSize: 11)
-        contentView.addSubview(pathHint)
+            field.leadingAnchor.constraint(equalTo: labelField.trailingAnchor, constant: 8),
+            field.topAnchor.constraint(equalTo: container.topAnchor),
+            field.trailingAnchor.constraint(equalTo: browseBtn.leadingAnchor, constant: -8),
 
-        y -= 25
+            browseBtn.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            browseBtn.topAnchor.constraint(equalTo: container.topAnchor),
+            browseBtn.widthAnchor.constraint(equalToConstant: 60)
+        ])
 
-        // 用量预警阈值
-        let warningLabel = NSTextField(labelWithString: "预警阈值 (万):")
-        warningLabel.frame = NSRect(x: 20, y: y, width: 120, height: 22)
-        contentView.addSubview(warningLabel)
+        container.heightAnchor.constraint(equalToConstant: 22).isActive = true
 
-        warningField = NSTextField(frame: NSRect(x: 150, y: y, width: 120, height: 22))
-        contentView.addSubview(warningField)
-
-        let warningHint = NSTextField(labelWithString: "超过此值将弹出通知提醒")
-        warningHint.frame = NSRect(x: 280, y: y, width: 200, height: 22)
-        warningHint.textColor = .secondaryLabelColor
-        contentView.addSubview(warningHint)
-
-        y -= 40
-
-        // 启用预警
-        warningCheck = NSButton(checkboxWithTitle: "启用用量预警", target: nil, action: nil)
-        warningCheck.frame = NSRect(x: 150, y: y, width: 200, height: 22)
-        contentView.addSubview(warningCheck)
-
-        y -= 50
-
-        // 开机自启
-        launchCheck = NSButton(checkboxWithTitle: "开机自动启动", target: nil, action: nil)
-        launchCheck.frame = NSRect(x: 150, y: y, width: 200, height: 22)
-        contentView.addSubview(launchCheck)
-
-        y -= 60
-
-        // 保存按钮
-        let saveBtn = NSButton(title: "保存", target: self, action: #selector(saveSettings))
-        saveBtn.frame = NSRect(x: 150, y: y, width: 80, height: 32)
-        saveBtn.bezelStyle = .rounded
-        contentView.addSubview(saveBtn)
-
-        // 重置按钮
-        let resetBtn = NSButton(title: "重置", target: self, action: #selector(resetSettings))
-        resetBtn.frame = NSRect(x: 250, y: y, width: 80, height: 32)
-        resetBtn.bezelStyle = .rounded
-        contentView.addSubview(resetBtn)
+        return (container, field)
     }
 
     func loadSettings() {
         intervalField.stringValue = "\(settings.refreshInterval)"
-
-        // 确保显示默认路径
-        let path = settings.dbPath
-        let displayPath = path.isEmpty ? "\(NSHomeDirectory())/.cc-switch/cc-switch.db" : path
-        pathField.stringValue = displayPath
-        pathField.toolTip = displayPath  // 添加工具提示，鼠标悬停显示完整路径
-
+        pathField.stringValue = settings.dbPath
+        pathField.toolTip = settings.dbPath
         warningField.stringValue = "\(settings.warningThreshold)"
         warningCheck.state = settings.warningEnabled ? .on : .off
         launchCheck.state = settings.launchAtLogin ? .on : .off
@@ -1762,70 +1842,40 @@ class SettingsWindowController: NSWindowController {
         panel.begin { [weak self] result in
             if result == .OK, let url = panel.url {
                 self?.pathField.stringValue = url.path
+                self?.pathField.toolTip = url.path
             }
         }
     }
 
     @objc func saveSettings() {
-        // 保存刷新间隔
         if let interval = Int(intervalField.stringValue), interval >= 5 && interval <= 3000 {
             settings.refreshInterval = interval
         }
-
-        // 保存数据库路径
         settings.dbPath = pathField.stringValue
-
-        // 保存预警设置
         if let threshold = Int(warningField.stringValue), threshold > 0 {
             settings.warningThreshold = threshold
         }
         settings.warningEnabled = warningCheck.state == .on
-
-        // 保存开机自启设置
         settings.launchAtLogin = launchCheck.state == .on
-        setLaunchAtLogin(settings.launchAtLogin)
 
-        // 通知保存完成
         let alert = NSAlert()
         alert.messageText = "设置已保存"
         alert.informativeText = "新的设置将在下次刷新时生效"
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "好的")
         alert.runModal()
 
         onSave()
+        window?.close()
     }
 
     @objc func resetSettings() {
         settings.refreshInterval = 30
         settings.dbPath = "\(NSHomeDirectory())/.cc-switch/cc-switch.db"
-        settings.warningThreshold = 500000
+        settings.warningThreshold = 50
         settings.warningEnabled = true
         settings.launchAtLogin = false
         loadSettings()
-    }
-
-    func setLaunchAtLogin(_ enabled: Bool) {
-        // 使用 Login Items API
-        let appPath = Bundle.main.bundlePath
-        let loginItems = "/Library/Items"
-
-        if enabled {
-            // 创建登录项
-            let plist: [String: Any] = [
-                "Label": "com.ccbar.launcher",
-                "ProgramArguments": [appPath],
-                "RunAtLoad": true
-            ]
-
-            let plistPath = "\(loginItems)/com.ccbar.launcher.plist"
-            let plistData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
-
-            try? FileManager.default.createDirectory(atPath: loginItems, withIntermediateDirectories: true)
-            try? plistData?.write(to: URL(fileURLWithPath: plistPath))
-        } else {
-            // 删除登录项
-            let plistPath = "\(loginItems)/com.ccbar.launcher.plist"
-            try? FileManager.default.removeItem(atPath: plistPath)
-        }
     }
 }
 
