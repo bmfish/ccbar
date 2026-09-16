@@ -91,6 +91,58 @@ enum Design {
         return usageColor(progress: CGFloat(min(progress, 1.0)))
     }
 
+    // MARK: - 模型配色（按小时轮换）
+
+    /// 模型配色的基础色带
+    private static let baseModelColors: [NSColor] = [
+        brandColor,                                                  // 品牌橙
+        NSColor(red: 0.35, green: 0.55, blue: 0.95, alpha: 1.0),     // 蓝
+        NSColor(red: 0.30, green: 0.76, blue: 0.54, alpha: 1.0),     // 绿
+        NSColor(red: 0.95, green: 0.65, blue: 0.35, alpha: 1.0),     // 橙
+        NSColor(red: 0.65, green: 0.55, blue: 0.98, alpha: 1.0),     // 紫
+        NSColor(red: 0.96, green: 0.45, blue: 0.71, alpha: 1.0),     // 粉
+    ]
+
+    /// 极简确定性随机数（LCG），用于按种子洗牌
+    private struct SeededRandom {
+        private var state: UInt64
+        init(seed: UInt64) { state = seed &* 6364136223846793005 &+ 1442695040888963407 }
+        mutating func next() -> UInt64 {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            return state >> 33
+        }
+    }
+
+    /// 当前小时的种子（同一小时内保持稳定）
+    private static func hourSeed() -> UInt64 {
+        let c = Calendar.current.dateComponents([.year, .month, .day, .hour], from: Date())
+        return UInt64((c.year ?? 0) * 1_000_000 + (c.month ?? 0) * 10_000
+                      + (c.day ?? 0) * 100 + (c.hour ?? 0))
+    }
+
+    /// 模型配色：每小时换一次顺序
+    ///
+    /// 同一小时内主页与详情页颜色一致；跨小时自动换一套。
+    static func modelColors(count: Int = 6) -> [NSColor] {
+        var colors = baseModelColors
+        var rng = SeededRandom(seed: hourSeed())
+
+        // Fisher-Yates 洗牌
+        if colors.count > 1 {
+            for i in stride(from: colors.count - 1, through: 1, by: -1) {
+                let j = Int(rng.next() % UInt64(i + 1))
+                colors.swapAt(i, j)
+            }
+        }
+
+        // 需要更多颜色时循环补足
+        var result: [NSColor] = []
+        for i in 0..<count {
+            result.append(colors[i % colors.count])
+        }
+        return result
+    }
+
     // 格式化数字
     static func formatTokens(_ n: Int64) -> String {
         if n >= 100_000_000 {
@@ -851,15 +903,8 @@ class PopoverViewController: NSViewController {
             contentStack.addArrangedSubview(headerView)
             headerView.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
 
-            // 模型配色（与环形图一致）
-            let modelColors: [NSColor] = [
-                Design.brandColor,
-                NSColor.systemBlue,
-                NSColor.systemGreen,
-                NSColor.systemOrange,
-                NSColor.systemPurple,
-                NSColor.systemPink
-            ]
+            // 模型配色（与环形图一致，按小时轮换）
+            let modelColors = Design.modelColors()
 
             let maxTotal = models.prefix(3).map { $0.total }.max() ?? 1
             for (index, model) in models.prefix(3).enumerated() {
@@ -3225,14 +3270,8 @@ class ModelDetailWindowController: NSWindowController {
         chartContainer.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
 
         let donutView = DonutChartWithLegendView(frame: NSRect(x: 0, y: 0, width: 500, height: 150))
-        let colors: [NSColor] = [
-            Design.brandColor,
-            NSColor.systemBlue,
-            NSColor.systemGreen,
-            NSColor.systemOrange,
-            NSColor.systemPurple,
-            NSColor.systemPink
-        ]
+        // 与主页模型分布使用同一套配色（按小时轮换）
+        let colors = Design.modelColors()
         donutView.items = models.prefix(6).enumerated().map { index, model in
             let percentage = totalToken > 0 ? String(format: "%.1f%%", Double(model.totalToken) / Double(totalToken) * 100) : "0%"
             let shortName = model.model.count > 12 ? String(model.model.prefix(12)) + "..." : model.model
