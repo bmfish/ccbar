@@ -525,7 +525,7 @@ class PopoverViewController: NSViewController {
         // MARK: - 操作按钮（水平排列）
         let buttonBar = NSView()
         buttonBar.translatesAutoresizingMaskIntoConstraints = false
-        buttonBar.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        buttonBar.heightAnchor.constraint(equalToConstant: 40).isActive = true  // 增加高度
         contentStack.addArrangedSubview(buttonBar)
         buttonBar.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
 
@@ -739,21 +739,24 @@ class PopoverViewController: NSViewController {
         container.layer?.cornerRadius = 6
 
         let iconLabel = NSTextField(labelWithString: icon)
-        iconLabel.font = NSFont.systemFont(ofSize: 14)
+        iconLabel.font = NSFont.systemFont(ofSize: 16)  // 增大图标
         iconLabel.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(iconLabel)
 
         let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        titleLabel.font = NSFont.systemFont(ofSize: 10)  // 减小字号确保显示完整
         titleLabel.textColor = Design.textPrimary
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.alignment = .center
         container.addSubview(titleLabel)
 
         NSLayoutConstraint.activate([
             iconLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            iconLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            iconLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
             titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            titleLabel.topAnchor.constraint(equalTo: iconLabel.bottomAnchor, constant: 2)
+            titleLabel.topAnchor.constraint(equalTo: iconLabel.bottomAnchor, constant: 3),
+            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 2),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -2)
         ])
 
         let clickGesture = NSClickGestureRecognizer(target: AppDelegate.shared, action: action)
