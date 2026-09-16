@@ -301,7 +301,412 @@ class DataCache {
     }
 }
 
+// MARK: - Popover View Controller (类似 CCSwitcher 风格)
+
+class PopoverViewController: NSViewController {
+    private var scrollView: NSScrollView!
+    private var contentStack: NSStackView!
+
+    override func loadView() {
+        // 创建主视图
+        let mainView = NSView(frame: NSRect(x: 0, y: 0, width: 320, height: 500))
+        mainView.wantsLayer = true
+        mainView.layer?.backgroundColor = Design.backgroundDark.cgColor
+
+        // 滚动视图
+        scrollView = NSScrollView(frame: mainView.bounds)
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasVerticalScroller = true
+        scrollView.drawsBackground = false
+        mainView.addSubview(scrollView)
+
+        // 内容栈
+        contentStack = NSStackView()
+        contentStack.orientation = .vertical
+        contentStack.alignment = .leading
+        contentStack.spacing = 0
+        contentStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let clipView = NSClipView()
+        clipView.documentView = contentStack
+        clipView.drawsBackground = false
+        scrollView.contentView = clipView
+
+        NSLayoutConstraint.activate([
+            contentStack.topAnchor.constraint(equalTo: clipView.topAnchor, constant: 12),
+            contentStack.leadingAnchor.constraint(equalTo: clipView.leadingAnchor, constant: 12),
+            contentStack.trailingAnchor.constraint(equalTo: clipView.trailingAnchor, constant: -12),
+            contentStack.bottomAnchor.constraint(equalTo: clipView.bottomAnchor, constant: -12)
+        ])
+
+        self.view = mainView
+
+        // 构建内容
+        buildContent()
+    }
+
+    private func buildContent() {
+        // 清空
+        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        // 获取数据
+        let today = AppDelegate.shared?.queryDayStats(days: 0)
+        let yesterday = AppDelegate.shared?.queryDayStats(days: 1)
+        let week = AppDelegate.shared?.queryDayStats(days: 7)
+        let month = AppDelegate.shared?.queryDayStats(days: 30)
+        let total = AppDelegate.shared?.queryTotalStats()
+        let models = AppDelegate.shared?.queryModelBreakdown()
+
+        // MARK: - 问候语
+        let greeting = AppDelegate.shared?.greetings.randomElement() ?? "ccBar 用量统计"
+        addLabel(greeting, fontSize: 12, color: Design.textSecondary, padding: NSEdgeInsets(top: 8, left: 0, bottom: 8, right: 0))
+        addSeparator()
+
+        // MARK: - 今日统计卡片
+        if let today = today {
+            addSectionHeader("📊 今日用量", action: #selector(AppDelegate.openHourlyDetailToday))
+
+            // 大数字
+            addBigNumber(Design.formatTokens(today.total), color: Design.brandColor)
+
+            // 统计行
+            let statsRow = createHorizontalStats([
+                ("请求数", "\(today.reqs)次", Design.textPrimary),
+                ("缓存命中", String(format: "%.1f%%", calculateCacheRate(today)), Design.successColor),
+                ("时长", AppDelegate.shared?.queryWorkHours() ?? "0", Design.textPrimary)
+            ])
+            contentStack.addArrangedSubview(statsRow)
+            statsRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+
+            addSpacer(8)
+        }
+
+        addSeparator()
+
+        // MARK: - 模型分布
+        if let models = models, !models.isEmpty {
+            addSectionHeader("🤖 模型分布", action: #selector(AppDelegate.openModelDetailToday))
+
+            let maxTotal = models.prefix(3).map { $0.total }.max() ?? 1
+            for model in models.prefix(3) {
+                addModelBar(name: model.model, value: model.total, maxValue: maxTotal)
+            }
+
+            addSpacer(8)
+            addSeparator()
+        }
+
+        // MARK: - 时间段统计
+        if let yesterday = yesterday {
+            addStatRow(icon: "📅", title: "昨日", value: Design.formatTokens(yesterday.total),
+                      action: #selector(AppDelegate.openHourlyDetailYesterday))
+        }
+
+        if let week = week {
+            addStatRow(icon: "📊", title: "近7天", value: Design.formatTokens(week.total),
+                      action: #selector(AppDelegate.openDetail))
+        }
+
+        if let month = month {
+            addStatRow(icon: "📆", title: "近30天", value: Design.formatTokens(month.total),
+                      action: #selector(AppDelegate.openMonthDetail))
+        }
+
+        if let total = total {
+            addStatRow(icon: "📊", title: "历史总量", value: Design.formatTokens(total.total),
+                      action: #selector(AppDelegate.openMonthDetail))
+        }
+
+        addSeparator()
+
+        // MARK: - 操作按钮
+        addActionButton(icon: "📋", title: "复制今日统计", action: #selector(AppDelegate.copyStats))
+        addActionButton(icon: "🔄", title: "刷新数据", action: #selector(AppDelegate.refreshData))
+        addActionButton(icon: "⚙️", title: "设置", action: #selector(AppDelegate.openSettings))
+        addActionButton(icon: "❌", title: "退出", action: #selector(AppDelegate.quit))
+    }
+
+    // MARK: - Helper Methods
+
+    private func addLabel(_ text: String, fontSize: CGFloat, color: NSColor,
+                         padding: NSEdgeInsets = NSEdgeInsets(top: 4, left: 0, bottom: 4, right: 0)) {
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.systemFont(ofSize: fontSize)
+        label.textColor = color
+        label.lineBreakMode = .byWordWrapping
+        label.maximumNumberOfLines = 0
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: padding.top),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: padding.left),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -padding.right),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -padding.bottom)
+        ])
+
+        contentStack.addArrangedSubview(container)
+        container.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+
+    private func addBigNumber(_ text: String, color: NSColor) {
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.monospacedDigitSystemFont(ofSize: 28, weight: .bold)
+        label.textColor = color
+
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 0),
+            label.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: 4)
+        ])
+
+        contentStack.addArrangedSubview(container)
+        container.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+
+    private func addSectionHeader(_ title: String, action: Selector? = nil) {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 28).isActive = true
+
+        let label = NSTextField(labelWithString: title)
+        label.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = Design.textPrimary
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+
+        if let action = action {
+            let button = NSButton(title: "", target: AppDelegate.shared, action: action)
+            button.isBordered = false
+            button.frame = container.bounds
+            button.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(button)
+
+            NSLayoutConstraint.activate([
+                button.topAnchor.constraint(equalTo: container.topAnchor),
+                button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                button.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            ])
+        }
+
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        contentStack.addArrangedSubview(container)
+        container.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+
+    private func addStatRow(icon: String, title: String, value: String, action: Selector) {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 36).isActive = true
+
+        // 图标
+        let iconLabel = NSTextField(labelWithString: icon)
+        iconLabel.font = NSFont.systemFont(ofSize: 14)
+        iconLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(iconLabel)
+
+        // 标题
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)
+        titleLabel.textColor = Design.textPrimary
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+
+        // 数值
+        let valueLabel = NSTextField(labelWithString: value)
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+        valueLabel.textColor = Design.textSecondary
+        valueLabel.alignment = .right
+        valueLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(valueLabel)
+
+        // 箭头
+        let arrow = NSTextField(labelWithString: "›")
+        arrow.font = NSFont.systemFont(ofSize: 16, weight: .medium)
+        arrow.textColor = Design.textMuted
+        arrow.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(arrow)
+
+        NSLayoutConstraint.activate([
+            iconLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            iconLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: iconLabel.trailingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            valueLabel.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 8),
+            valueLabel.trailingAnchor.constraint(equalTo: arrow.leadingAnchor, constant: -4),
+            valueLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            arrow.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            arrow.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        // 点击事件
+        let clickGesture = NSClickGestureRecognizer(target: AppDelegate.shared, action: action)
+        container.addGestureRecognizer(clickGesture)
+
+        contentStack.addArrangedSubview(container)
+        container.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+
+    private func createHorizontalStats(_ stats: [(String, String, NSColor)]) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 36).isActive = true
+
+        var previousView: NSView?
+
+        for (label, value, color) in stats {
+            let statView = NSView()
+            statView.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(statView)
+
+            let labelField = NSTextField(labelWithString: label)
+            labelField.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            labelField.textColor = Design.textMuted
+            labelField.translatesAutoresizingMaskIntoConstraints = false
+            statView.addSubview(labelField)
+
+            let valueField = NSTextField(labelWithString: value)
+            valueField.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
+            valueField.textColor = color
+            valueField.translatesAutoresizingMaskIntoConstraints = false
+            statView.addSubview(valueField)
+
+            NSLayoutConstraint.activate([
+                labelField.topAnchor.constraint(equalTo: statView.topAnchor, constant: 4),
+                labelField.centerXAnchor.constraint(equalTo: statView.centerXAnchor),
+                valueField.topAnchor.constraint(equalTo: labelField.bottomAnchor, constant: 2),
+                valueField.centerXAnchor.constraint(equalTo: statView.centerXAnchor)
+            ])
+
+            if let prev = previousView {
+                statView.leadingAnchor.constraint(equalTo: prev.trailingAnchor).isActive = true
+                statView.widthAnchor.constraint(equalTo: prev.widthAnchor).isActive = true
+            } else {
+                statView.leadingAnchor.constraint(equalTo: container.leadingAnchor).isActive = true
+            }
+            statView.topAnchor.constraint(equalTo: container.topAnchor).isActive = true
+            statView.bottomAnchor.constraint(equalTo: container.bottomAnchor).isActive = true
+
+            previousView = statView
+        }
+
+        previousView?.trailingAnchor.constraint(equalTo: container.trailingAnchor).isActive = true
+
+        return container
+    }
+
+    private func addModelBar(name: String, value: Int64, maxValue: Int64) {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
+        let shortName = name.count > 16 ? String(name.prefix(16)) + "..." : name
+
+        let nameLabel = NSTextField(labelWithString: shortName)
+        nameLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        nameLabel.textColor = Design.textPrimary
+        nameLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(nameLabel)
+
+        let valueLabel = NSTextField(labelWithString: Design.formatTokensK(value))
+        valueLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
+        valueLabel.textColor = Design.textSecondary
+        valueLabel.alignment = .right
+        valueLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(valueLabel)
+
+        let progressBar = ProgressBarView()
+        progressBar.progress = maxValue > 0 ? CGFloat(value) / CGFloat(maxValue) : 0
+        progressBar.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(progressBar)
+
+        NSLayoutConstraint.activate([
+            nameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            nameLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+            nameLabel.widthAnchor.constraint(equalToConstant: 130),
+            valueLabel.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            valueLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 2),
+            progressBar.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 4),
+            progressBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            progressBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            progressBar.heightAnchor.constraint(equalToConstant: Design.barHeight)
+        ])
+
+        contentStack.addArrangedSubview(container)
+        container.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+
+    private func addActionButton(icon: String, title: String, action: Selector) {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
+        let iconLabel = NSTextField(labelWithString: icon)
+        iconLabel.font = NSFont.systemFont(ofSize: 13)
+        iconLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(iconLabel)
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = NSFont.systemFont(ofSize: 13, weight: .regular)
+        titleLabel.textColor = Design.textPrimary
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            iconLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            iconLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: iconLabel.trailingAnchor, constant: 8),
+            titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+
+        let clickGesture = NSClickGestureRecognizer(target: AppDelegate.shared, action: action)
+        container.addGestureRecognizer(clickGesture)
+
+        contentStack.addArrangedSubview(container)
+        container.widthAnchor.constraint(equalTo: contentStack.widthAnchor).isActive = true
+    }
+
+    private func addSeparator() {
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
+
+        contentStack.addArrangedSubview(separator)
+        separator.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -16).isActive = true
+        separator.centerXAnchor.constraint(equalTo: contentStack.centerXAnchor).isActive = true
+    }
+
+    private func addSpacer(_ height: CGFloat) {
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.heightAnchor.constraint(equalToConstant: height).isActive = true
+        contentStack.addArrangedSubview(spacer)
+    }
+
+    private func calculateCacheRate(_ stats: (reqs: Int, input: Int64, output: Int64, cacheCreate: Int64, cacheRead: Int64, total: Int64)) -> Double {
+        let totalInput = stats.input + stats.cacheCreate + stats.cacheRead
+        return totalInput > 0 ? Double(stats.cacheRead) / Double(totalInput) * 100 : 0
+    }
+}
+
+// MARK: - AppDelegate
+
 class AppDelegate: NSObject, NSApplicationDelegate {
+    static var shared: AppDelegate?
+
     var statusItem: NSStatusItem!
     var timer: Timer?
     var db: OpaquePointer?
@@ -339,6 +744,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     ]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        AppDelegate.shared = self
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         // 初始数据库连接
@@ -350,11 +756,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 备份历史数据（启动时执行一次）
         backupHistory()
 
+        // 设置点击事件（使用 popover 替代 menu）
+        if let button = statusItem.button {
+            button.action = #selector(togglePopover)
+            button.target = self
+        }
+
         // 初始更新
         updateData()
 
         // 定时器
         startTimer()
+    }
+
+    var popover: NSPopover?
+
+    @objc func togglePopover() {
+        if let popover = popover, popover.isShown {
+            popover.performClose(nil)
+        } else {
+            showPopover()
+        }
+    }
+
+    func showPopover() {
+        if popover == nil {
+            let popover = NSPopover()
+            popover.contentSize = NSSize(width: 320, height: 500)
+            popover.behavior = .transient
+            popover.animates = true
+            popover.contentViewController = PopoverViewController()
+            self.popover = popover
+        }
+
+        if let button = statusItem.button {
+            popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
     }
 
     func connectDB() {
@@ -867,262 +1304,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func updateMenu() {
-        let menu = NSMenu()
-
-        // 设置菜单使用深色模式以提高对比度
-        menu.appearance = NSAppearance(named: .darkAqua)
-
-        // 创建带样式的菜单项（使用白色字体）
-        func createMenuItem(_ title: String) -> NSMenuItem {
-            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            let attributes: [NSAttributedString.Key: Any] = [
-                .foregroundColor: NSColor.white,
-                .font: NSFont.menuFont(ofSize: 0)
-            ]
-            item.attributedTitle = NSAttributedString(string: title, attributes: attributes)
-            return item
-        }
-
-        // 创建卡片式菜单项
-        func createCardMenuItem(title: String, subtitle: String? = nil, icon: String? = nil,
-                               action: Selector? = nil, keyEquivalent: String = "") -> NSMenuItem {
-            let item = NSMenuItem(title: "", action: action, keyEquivalent: keyEquivalent)
-            if action != nil {
-                item.keyEquivalentModifierMask = [.command]
-            }
-
-            // 创建自定义视图
-            let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: subtitle != nil ? 52 : 36))
-
-            // 图标
-            var xOffset: CGFloat = 12
-            if let icon = icon {
-                let iconSize: CGFloat = 16
-                let iconView = NSTextField(labelWithString: icon)
-                iconView.font = NSFont.systemFont(ofSize: iconSize)
-                iconView.frame = NSRect(x: xOffset, y: (containerView.frame.height - iconSize) / 2,
-                                       width: iconSize + 4, height: iconSize)
-                iconView.textColor = Design.brandColor
-                containerView.addSubview(iconView)
-                xOffset += iconSize + 8
-            }
-
-            // 标题
-            let titleField = NSTextField(frame: NSRect(x: xOffset, y: subtitle != nil ? 24 : 10,
-                                                       width: 240 - xOffset, height: 16))
-            titleField.stringValue = title
-            titleField.font = NSFont.systemFont(ofSize: 13, weight: .medium)
-            titleField.textColor = Design.textPrimary
-            titleField.lineBreakMode = .byTruncatingTail
-            containerView.addSubview(titleField)
-
-            // 副标题
-            if let subtitle = subtitle {
-                let subtitleField = NSTextField(frame: NSRect(x: xOffset, y: 8,
-                                                              width: 240 - xOffset, height: 14))
-                subtitleField.stringValue = subtitle
-                subtitleField.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-                subtitleField.textColor = Design.textSecondary
-                containerView.addSubview(subtitleField)
-            }
-
-            item.view = containerView
-            return item
-        }
-
-        // 创建统计卡片
-        func createStatCard(label: String, value: String, color: NSColor = Design.textPrimary) -> NSMenuItem {
-            let item = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-
-            let containerView = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 40))
-
-            // 标签
-            let labelField = NSTextField(frame: NSRect(x: 12, y: 20, width: 100, height: 14))
-            labelField.stringValue = label
-            labelField.font = NSFont.systemFont(ofSize: 10, weight: .regular)
-            labelField.textColor = Design.textMuted
-            containerView.addSubview(labelField)
-
-            // 数值
-            let valueField = NSTextField(frame: NSRect(x: 12, y: 4, width: 240, height: 18))
-            valueField.stringValue = value
-            valueField.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
-            valueField.textColor = color
-            containerView.addSubview(valueField)
-
-            item.view = containerView
-            return item
-        }
-
-        // 随机问候语
-        let greeting = greetings.randomElement() ?? "ccSwitch 用量统计"
-        let greetingItem = createMenuItem(greeting)
-        menu.addItem(greetingItem)
-        menu.addItem(.separator())
-
-        // 今日统计卡片
-        if let stats = DataCache.shared.getCachedToday() {
-            // 今日总量（大数字）
-            let todayTotal = fmtTitle(stats.total)
-            let todayItem = createCardMenuItem(title: "📊 今日用量", subtitle: todayTotal,
-                                              icon: "📊", action: #selector(openHourlyDetailToday), keyEquivalent: "t")
-            menu.addItem(todayItem)
-
-            // 请求和缓存命中率
-            let totalInput = stats.input + stats.cacheCreate + stats.cacheRead
-            let cacheRate = totalInput > 0 ? Double(stats.cacheRead) / Double(totalInput) * 100 : 0
-
-            let statsContainer = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 36))
-
-            // 请求数
-            let reqLabel = NSTextField(frame: NSRect(x: 12, y: 18, width: 80, height: 12))
-            reqLabel.stringValue = "请求数"
-            reqLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
-            reqLabel.textColor = Design.textMuted
-            statsContainer.addSubview(reqLabel)
-
-            let reqValue = NSTextField(frame: NSRect(x: 12, y: 4, width: 80, height: 16))
-            reqValue.stringValue = "\(stats.reqs)次"
-            reqValue.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-            reqValue.textColor = Design.textPrimary
-            statsContainer.addSubview(reqValue)
-
-            // 缓存命中率
-            let cacheLabel = NSTextField(frame: NSRect(x: 100, y: 18, width: 80, height: 12))
-            cacheLabel.stringValue = "缓存命中"
-            cacheLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
-            cacheLabel.textColor = Design.textMuted
-            statsContainer.addSubview(cacheLabel)
-
-            let cacheValue = NSTextField(frame: NSRect(x: 100, y: 4, width: 80, height: 16))
-            cacheValue.stringValue = String(format: "%.1f%%", cacheRate)
-            cacheValue.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-            cacheValue.textColor = cacheRate > 80 ? Design.successColor : Design.warningColor
-            statsContainer.addSubview(cacheValue)
-
-            // 时长
-            if let hours = queryWorkHours() {
-                let hoursLabel = NSTextField(frame: NSRect(x: 188, y: 18, width: 80, height: 12))
-                hoursLabel.stringValue = "时长"
-                hoursLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
-                hoursLabel.textColor = Design.textMuted
-                statsContainer.addSubview(hoursLabel)
-
-                let hoursValue = NSTextField(frame: NSRect(x: 188, y: 4, width: 80, height: 16))
-                hoursValue.stringValue = "\(hours)h"
-                hoursValue.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .medium)
-                hoursValue.textColor = Design.textPrimary
-                statsContainer.addSubview(hoursValue)
-            }
-
-            let statsItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-            statsItem.view = statsContainer
-            menu.addItem(statsItem)
-        } else {
-            if FileManager.default.fileExists(atPath: settings.dbPath) {
-                let noData = createMenuItem("📊 今日暂无数据")
-                menu.addItem(noData)
-            } else {
-                let noDB = createCardMenuItem(title: "🌶️ 未找到数据源", subtitle: "请去设置",
-                                            icon: "🌶️", action: #selector(openSettings))
-                menu.addItem(noDB)
+        // 使用 popover 替代 menu，此函数现在只刷新 popover 内容
+        if let popover = popover, popover.isShown {
+            if let viewController = popover.contentViewController as? PopoverViewController {
+                viewController.viewDidLoad() // 重新加载内容
             }
         }
-
-        menu.addItem(.separator())
-
-        // 模型分布
-        if let models = DataCache.shared.getCachedModelBreakdown(), !models.isEmpty {
-            let modelTitle = createCardMenuItem(title: "🤖 模型分布", subtitle: "点击查看详细",
-                                              icon: "🤖", action: #selector(openModelDetailToday), keyEquivalent: "b")
-            menu.addItem(modelTitle)
-
-            // 显示前3个模型（带进度条样式）
-            let maxTotal = models.prefix(3).map { $0.total }.max() ?? 1
-            for model in models.prefix(3) {
-                let modelName = model.model.count > 18 ? String(model.model.prefix(18)) + "..." : model.model
-                let progress = CGFloat(model.total) / CGFloat(maxTotal)
-
-                let modelContainer = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 28))
-
-                // 模型名称
-                let nameField = NSTextField(frame: NSRect(x: 24, y: 12, width: 150, height: 14))
-                nameField.stringValue = modelName
-                nameField.font = NSFont.systemFont(ofSize: 11, weight: .medium)
-                nameField.textColor = Design.textPrimary
-                modelContainer.addSubview(nameField)
-
-                // 数值
-                let valueField = NSTextField(frame: NSRect(x: 175, y: 12, width: 90, height: 14))
-                valueField.stringValue = Design.formatTokensK(model.total)
-                valueField.font = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .regular)
-                valueField.textColor = Design.textSecondary
-                valueField.alignment = .right
-                modelContainer.addSubview(valueField)
-
-                // 进度条
-                let progressBar = ProgressBarView(frame: NSRect(x: 24, y: 4, width: 240, height: 8))
-                progressBar.progress = progress
-                progressBar.fillColor = Design.brandColor.withAlphaComponent(0.6)
-                modelContainer.addSubview(progressBar)
-
-                let modelItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
-                modelItem.view = modelContainer
-                menu.addItem(modelItem)
-            }
-
-            menu.addItem(.separator())
-        }
-
-        // 昨日统计
-        if let stats = DataCache.shared.getCachedYesterday() {
-            let yesterdayItem = createCardMenuItem(title: "📅 昨日用量", subtitle: Design.formatTokensK(stats.total),
-                                                  icon: "📅", action: #selector(openHourlyDetailYesterday), keyEquivalent: "y")
-            menu.addItem(yesterdayItem)
-        }
-
-        // 近7天统计
-        if let stats = DataCache.shared.getCachedWeek() {
-            let weekItem = createCardMenuItem(title: "📊 近7天用量", subtitle: Design.formatTokensK(stats.total),
-                                            icon: "📊", action: #selector(openDetail), keyEquivalent: "w")
-            menu.addItem(weekItem)
-        }
-
-        // 近30天统计
-        if let stats = DataCache.shared.getCachedMonth() {
-            let monthItem = createCardMenuItem(title: "📆 近30天用量", subtitle: Design.formatTokensK(stats.total),
-                                             icon: "📆", action: #selector(openMonthDetail), keyEquivalent: "m")
-            menu.addItem(monthItem)
-        }
-
-        // 总量
-        if let stats = DataCache.shared.getCachedTotal() {
-            let totalItem = createCardMenuItem(title: "📊 历史总量", subtitle: Design.formatTokensK(stats.total),
-                                             icon: "📊", action: #selector(openMonthDetail), keyEquivalent: "a")
-            menu.addItem(totalItem)
-        }
-
-        menu.addItem(.separator())
-
-        // 操作按钮
-        let copyItem = createCardMenuItem(title: "📋 复制今日统计", icon: "📋",
-                                        action: #selector(copyStats), keyEquivalent: "c")
-        menu.addItem(copyItem)
-
-        let refreshItem = createCardMenuItem(title: "🔄 刷新数据", icon: "🔄",
-                                           action: #selector(refreshData), keyEquivalent: "r")
-        menu.addItem(refreshItem)
-
-        let settingsItem = createCardMenuItem(title: "⚙️ 设置", icon: "⚙️",
-                                            action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(settingsItem)
-
-        // 退出
-        let quitItem = createCardMenuItem(title: "❌ 退出", icon: "❌",
-                                        action: #selector(quit), keyEquivalent: "q")
-        menu.addItem(quitItem)
-
-        statusItem.menu = menu
     }
 
     @objc func refreshData() {
@@ -1146,7 +1333,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             statusItem.button?.title = totalStr
         }
 
-        // 更新菜单
+        // 更新 popover
         updateMenu()
     }
 
@@ -1541,7 +1728,7 @@ class DetailWindowController: NSWindowController {
         )
         window.title = "近7天用量"
         window.center()
-        window.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+        window.backgroundColor = Design.backgroundDark
         window.minSize = NSSize(width: 450, height: 250)
         self.init(window: window)
         setupUI()
@@ -1571,7 +1758,7 @@ class DetailWindowController: NSWindowController {
         dateLabel = NSTextField(labelWithString: "")
         dateLabel.translatesAutoresizingMaskIntoConstraints = false
         dateLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        dateLabel.textColor = NSColor.white
+        dateLabel.textColor = Design.textPrimary
         dateLabel.alignment = .center
         navBar.addSubview(dateLabel)
 
@@ -1685,7 +1872,7 @@ class DetailWindowController: NSWindowController {
             let label = NSTextField(labelWithString: text)
             label.translatesAutoresizingMaskIntoConstraints = false
             label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            label.textColor = NSColor(white: 0.6, alpha: 1.0)
+            label.textColor = Design.textMuted
             label.alignment = index == 0 ? .left : .right
             container.addSubview(label)
 
@@ -1835,7 +2022,7 @@ class MonthDetailWindowController: NSWindowController {
         )
         window.title = "近30天用量"
         window.center()
-        window.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+        window.backgroundColor = Design.backgroundDark
         window.minSize = NSSize(width: 450, height: 300)
         self.init(window: window)
         setupUI()
@@ -1864,7 +2051,7 @@ class MonthDetailWindowController: NSWindowController {
         dateLabel = NSTextField(labelWithString: "")
         dateLabel.translatesAutoresizingMaskIntoConstraints = false
         dateLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        dateLabel.textColor = NSColor.white
+        dateLabel.textColor = Design.textPrimary
         dateLabel.alignment = .center
         navBar.addSubview(dateLabel)
 
@@ -1995,7 +2182,7 @@ class MonthDetailWindowController: NSWindowController {
             let label = NSTextField(labelWithString: text)
             label.translatesAutoresizingMaskIntoConstraints = false
             label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            label.textColor = NSColor(white: 0.6, alpha: 1.0)
+            label.textColor = Design.textMuted
             label.alignment = index == 0 ? .left : .right
             container.addSubview(label)
 
@@ -2149,7 +2336,7 @@ class ModelDetailWindowController: NSWindowController {
         )
         window.title = "模型分布详情"
         window.center()
-        window.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+        window.backgroundColor = Design.backgroundDark
         window.minSize = NSSize(width: 500, height: 300)
         self.init(window: window)
         setupUI()
@@ -2179,7 +2366,7 @@ class ModelDetailWindowController: NSWindowController {
         dateLabel = NSTextField(labelWithString: "")
         dateLabel.translatesAutoresizingMaskIntoConstraints = false
         dateLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
-        dateLabel.textColor = NSColor.white
+        dateLabel.textColor = Design.textPrimary
         dateLabel.alignment = .center
         navBar.addSubview(dateLabel)
 
@@ -2298,7 +2485,7 @@ class ModelDetailWindowController: NSWindowController {
             let label = NSTextField(labelWithString: text)
             label.translatesAutoresizingMaskIntoConstraints = false
             label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            label.textColor = NSColor(white: 0.6, alpha: 1.0)
+            label.textColor = Design.textMuted
             label.alignment = index == 0 ? .left : .right
             container.addSubview(label)
 
@@ -2444,7 +2631,7 @@ class HourlyDetailWindowController: NSWindowController {
         )
         window.title = "日志"
         window.center()
-        window.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.11, alpha: 1.0)
+        window.backgroundColor = Design.backgroundDark
         window.minSize = NSSize(width: 350, height: 300)
         self.init(window: window)
         setupUI()
@@ -2476,7 +2663,7 @@ class HourlyDetailWindowController: NSWindowController {
         dateLabel = NSTextField(labelWithString: "")
         dateLabel.translatesAutoresizingMaskIntoConstraints = false
         dateLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .semibold)
-        dateLabel.textColor = NSColor.white
+        dateLabel.textColor = Design.textPrimary
         dateLabel.alignment = .center
         navBar.addSubview(dateLabel)
 
@@ -2596,7 +2783,7 @@ class HourlyDetailWindowController: NSWindowController {
             let label = NSTextField(labelWithString: text)
             label.translatesAutoresizingMaskIntoConstraints = false
             label.font = NSFont.systemFont(ofSize: 11, weight: .semibold)
-            label.textColor = NSColor(white: 0.6, alpha: 1.0)
+            label.textColor = Design.textMuted
             label.alignment = index == 0 ? .left : .right
             container.addSubview(label)
 
