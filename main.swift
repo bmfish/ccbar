@@ -385,21 +385,100 @@ class PopoverViewController: NSViewController {
             bigNumber.textColor = Design.brandColor
             contentStack.addArrangedSubview(bigNumber)
 
-            // 三列统计
+            // 三列统计 - 使用 Auto Layout
             let statsRow = NSView()
             statsRow.translatesAutoresizingMaskIntoConstraints = false
-            statsRow.heightAnchor.constraint(equalToConstant: 32).isActive = true
+            statsRow.heightAnchor.constraint(equalToConstant: 36).isActive = true
             contentStack.addArrangedSubview(statsRow)
             statsRow.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
 
             let totalInput = today.input + today.cacheCreate + today.cacheRead
             let cacheRate = totalInput > 0 ? Double(today.cacheRead) / Double(totalInput) * 100 : 0
 
-            addStatColumn(to: statsRow, x: 0, label: "请求数", value: "\(today.reqs)次", color: Design.textPrimary)
-            addStatColumn(to: statsRow, x: 100, label: "缓存命中", value: String(format: "%.0f%%", cacheRate),
-                         color: cacheRate > 80 ? Design.successColor : Design.warningColor)
+            // 请求数列
+            let reqColumn = NSView()
+            reqColumn.translatesAutoresizingMaskIntoConstraints = false
+            statsRow.addSubview(reqColumn)
+
+            let reqLabel = NSTextField(labelWithString: "请求数")
+            reqLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            reqLabel.textColor = Design.textMuted
+            reqLabel.translatesAutoresizingMaskIntoConstraints = false
+            reqColumn.addSubview(reqLabel)
+
+            let reqValue = NSTextField(labelWithString: "\(today.reqs)次")
+            reqValue.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            reqValue.textColor = Design.textPrimary
+            reqValue.translatesAutoresizingMaskIntoConstraints = false
+            reqColumn.addSubview(reqValue)
+
+            NSLayoutConstraint.activate([
+                reqColumn.leadingAnchor.constraint(equalTo: statsRow.leadingAnchor),
+                reqColumn.topAnchor.constraint(equalTo: statsRow.topAnchor),
+                reqColumn.bottomAnchor.constraint(equalTo: statsRow.bottomAnchor),
+                reqColumn.widthAnchor.constraint(equalTo: statsRow.widthAnchor, multiplier: 0.33),
+                reqLabel.topAnchor.constraint(equalTo: reqColumn.topAnchor, constant: 4),
+                reqLabel.centerXAnchor.constraint(equalTo: reqColumn.centerXAnchor),
+                reqValue.topAnchor.constraint(equalTo: reqLabel.bottomAnchor, constant: 2),
+                reqValue.centerXAnchor.constraint(equalTo: reqColumn.centerXAnchor)
+            ])
+
+            // 缓存命中列
+            let cacheColumn = NSView()
+            cacheColumn.translatesAutoresizingMaskIntoConstraints = false
+            statsRow.addSubview(cacheColumn)
+
+            let cacheLabel = NSTextField(labelWithString: "缓存命中")
+            cacheLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+            cacheLabel.textColor = Design.textMuted
+            cacheLabel.translatesAutoresizingMaskIntoConstraints = false
+            cacheColumn.addSubview(cacheLabel)
+
+            let cacheValue = NSTextField(labelWithString: String(format: "%.0f%%", cacheRate))
+            cacheValue.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+            cacheValue.textColor = cacheRate > 80 ? Design.successColor : Design.warningColor
+            cacheValue.translatesAutoresizingMaskIntoConstraints = false
+            cacheColumn.addSubview(cacheValue)
+
+            NSLayoutConstraint.activate([
+                cacheColumn.leadingAnchor.constraint(equalTo: reqColumn.trailingAnchor),
+                cacheColumn.topAnchor.constraint(equalTo: statsRow.topAnchor),
+                cacheColumn.bottomAnchor.constraint(equalTo: statsRow.bottomAnchor),
+                cacheColumn.widthAnchor.constraint(equalTo: statsRow.widthAnchor, multiplier: 0.33),
+                cacheLabel.topAnchor.constraint(equalTo: cacheColumn.topAnchor, constant: 4),
+                cacheLabel.centerXAnchor.constraint(equalTo: cacheColumn.centerXAnchor),
+                cacheValue.topAnchor.constraint(equalTo: cacheLabel.bottomAnchor, constant: 2),
+                cacheValue.centerXAnchor.constraint(equalTo: cacheColumn.centerXAnchor)
+            ])
+
+            // 时长列
             if let hours = AppDelegate.shared?.queryWorkHours() {
-                addStatColumn(to: statsRow, x: 200, label: "时长", value: "\(hours)h", color: Design.textPrimary)
+                let hoursColumn = NSView()
+                hoursColumn.translatesAutoresizingMaskIntoConstraints = false
+                statsRow.addSubview(hoursColumn)
+
+                let hoursLabel = NSTextField(labelWithString: "时长")
+                hoursLabel.font = NSFont.systemFont(ofSize: 10, weight: .regular)
+                hoursLabel.textColor = Design.textMuted
+                hoursLabel.translatesAutoresizingMaskIntoConstraints = false
+                hoursColumn.addSubview(hoursLabel)
+
+                let hoursValue = NSTextField(labelWithString: "\(hours)h")
+                hoursValue.font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+                hoursValue.textColor = Design.textPrimary
+                hoursValue.translatesAutoresizingMaskIntoConstraints = false
+                hoursColumn.addSubview(hoursValue)
+
+                NSLayoutConstraint.activate([
+                    hoursColumn.leadingAnchor.constraint(equalTo: cacheColumn.trailingAnchor),
+                    hoursColumn.trailingAnchor.constraint(equalTo: statsRow.trailingAnchor),
+                    hoursColumn.topAnchor.constraint(equalTo: statsRow.topAnchor),
+                    hoursColumn.bottomAnchor.constraint(equalTo: statsRow.bottomAnchor),
+                    hoursLabel.topAnchor.constraint(equalTo: hoursColumn.topAnchor, constant: 4),
+                    hoursLabel.centerXAnchor.constraint(equalTo: hoursColumn.centerXAnchor),
+                    hoursValue.topAnchor.constraint(equalTo: hoursLabel.bottomAnchor, constant: 2),
+                    hoursValue.centerXAnchor.constraint(equalTo: hoursColumn.centerXAnchor)
+                ])
             }
 
             addSeparator()
