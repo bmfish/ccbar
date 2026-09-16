@@ -160,6 +160,49 @@ class BarChartView: NSView {
     var highlightColor: NSColor = Design.accentColor
     var highlightIndex: Int = -1  // 高亮某一天（如今天）
 
+    /// 渐变模式：每根柱子按位置取渐变色，不再是单一颜色
+    var useGradient: Bool = false
+    /// 色相偏移（0.0 ~ 1.0），让不同日期的图表呈现不同的色系
+    var hueOffset: CGFloat = 0
+    /// 渐变色带（从第一个颜色平滑过渡到最后一个）
+    var gradientColors: [NSColor] = [
+        NSColor(red: 0.35, green: 0.55, blue: 0.95, alpha: 1.0),  // 蓝
+        NSColor(red: 0.40, green: 0.78, blue: 0.75, alpha: 1.0),  // 青
+        NSColor(red: 0.45, green: 0.82, blue: 0.50, alpha: 1.0),  // 绿
+        NSColor(red: 0.95, green: 0.78, blue: 0.35, alpha: 1.0),  // 黄
+        Design.brandColor,                                         // 橙
+        NSColor(red: 0.90, green: 0.45, blue: 0.60, alpha: 1.0)   // 粉
+    ]
+
+    /// 在渐变色带上按进度取色（0.0 ~ 1.0），并按 hueOffset 旋转色相
+    private func gradientColor(at progress: CGFloat) -> NSColor {
+        guard gradientColors.count >= 2 else { return barColor }
+        let p = min(max(progress, 0), 1)
+        let scaled = p * CGFloat(gradientColors.count - 1)
+        let idx = min(Int(scaled), gradientColors.count - 2)
+        let t = scaled - CGFloat(idx)
+
+        guard let c1 = gradientColors[idx].usingColorSpace(.sRGB),
+              let c2 = gradientColors[idx + 1].usingColorSpace(.sRGB) else {
+            return gradientColors[idx]
+        }
+
+        let r = c1.redComponent   + (c2.redComponent   - c1.redComponent)   * t
+        let g = c1.greenComponent + (c2.greenComponent - c1.greenComponent) * t
+        let b = c1.blueComponent  + (c2.blueComponent  - c1.blueComponent)  * t
+
+        guard hueOffset != 0 else {
+            return NSColor(red: r, green: g, blue: b, alpha: 1.0)
+        }
+
+        // 转 HSB 做色相旋转，再转回 RGB
+        let base = NSColor(red: r, green: g, blue: b, alpha: 1.0).usingColorSpace(.sRGB) ?? NSColor.white
+        var h: CGFloat = 0, s: CGFloat = 0, br: CGFloat = 0, a: CGFloat = 0
+        base.getHue(&h, saturation: &s, brightness: &br, alpha: &a)
+        return NSColor(hue: (h + hueOffset).truncatingRemainder(dividingBy: 1.0),
+                       saturation: s, brightness: br, alpha: 1.0)
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
 
@@ -170,6 +213,7 @@ class BarChartView: NSView {
         let labelHeight: CGFloat = 16
         let availableHeight = bounds.height - labelHeight - padding * 2
         let barWidth = max(8, (bounds.width - padding * 2) / CGFloat(values.count) - 4)
+        let count = values.count
 
         for (i, val) in values.enumerated() {
             let x = padding + CGFloat(i) * (barWidth + 4)
@@ -179,7 +223,17 @@ class BarChartView: NSView {
             // 柱子
             let barRect = NSRect(x: x, y: y, width: barWidth, height: barHeight)
             let barPath = NSBezierPath(roundedRect: barRect, xRadius: 3, yRadius: 3)
-            let color = (i == highlightIndex) ? highlightColor : barColor
+
+            let color: NSColor
+            if i == highlightIndex {
+                color = highlightColor
+            } else if useGradient {
+                // 按柱子位置在色带上取色（只有一根柱子时用中间色）
+                let progress = count > 1 ? CGFloat(i) / CGFloat(count - 1) : 0.5
+                color = gradientColor(at: progress)
+            } else {
+                color = barColor
+            }
             color.setFill()
             barPath.fill()
 
@@ -3358,6 +3412,10 @@ class HourlyDetailWindowController: NSWindowController {
         let barChart = BarChartView(frame: NSRect(x: 0, y: 0, width: 400, height: 100))
         barChart.values = (startHour...endHour).map { CGFloat(hourlyData[$0].reqs) }
         barChart.labels = (startHour...endHour).map { "\($0)" }
+        barChart.useGradient = true
+        // 每天用不同的起始色，避免每天看起来都一样
+        let dayOfYear = Calendar.current.ordinality(of: .day, in: .year, for: date) ?? 0
+        barChart.hueOffset = CGFloat(dayOfYear % 6) / 6.0
         barChart.translatesAutoresizingMaskIntoConstraints = false
         chartContainer.addSubview(barChart)
 
