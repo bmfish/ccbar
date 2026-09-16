@@ -522,11 +522,52 @@ class PopoverViewController: NSViewController {
 
         addSeparator()
 
-        // MARK: - 操作按钮
-        addCompactActionButton(icon: "📋", title: "复制今日统计", action: #selector(AppDelegate.copyStats))
-        addCompactActionButton(icon: "🔄", title: "刷新数据", action: #selector(AppDelegate.refreshData))
-        addCompactActionButton(icon: "⚙️", title: "设置", action: #selector(AppDelegate.openSettings))
-        addCompactActionButton(icon: "❌", title: "退出", action: #selector(AppDelegate.quit))
+        // MARK: - 操作按钮（水平排列）
+        let buttonBar = NSView()
+        buttonBar.translatesAutoresizingMaskIntoConstraints = false
+        buttonBar.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        contentStack.addArrangedSubview(buttonBar)
+        buttonBar.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
+
+        // 复制按钮
+        let copyBtn = createHorizontalButton(icon: "📋", title: "复制", action: #selector(AppDelegate.copyStats))
+        buttonBar.addSubview(copyBtn)
+
+        // 刷新按钮
+        let refreshBtn = createHorizontalButton(icon: "🔄", title: "刷新", action: #selector(AppDelegate.refreshData))
+        buttonBar.addSubview(refreshBtn)
+
+        // 设置按钮
+        let settingsBtn = createHorizontalButton(icon: "⚙️", title: "设置", action: #selector(AppDelegate.openSettings))
+        buttonBar.addSubview(settingsBtn)
+
+        // 退出按钮
+        let quitBtn = createHorizontalButton(icon: "❌", title: "退出", action: #selector(AppDelegate.quit))
+        buttonBar.addSubview(quitBtn)
+
+        // 水平布局：四个按钮等宽排列
+        NSLayoutConstraint.activate([
+            copyBtn.leadingAnchor.constraint(equalTo: buttonBar.leadingAnchor),
+            copyBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
+            copyBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
+            copyBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25),
+
+            refreshBtn.leadingAnchor.constraint(equalTo: copyBtn.trailingAnchor, constant: 4),
+            refreshBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
+            refreshBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
+            refreshBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25),
+
+            settingsBtn.leadingAnchor.constraint(equalTo: refreshBtn.trailingAnchor, constant: 4),
+            settingsBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
+            settingsBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
+            settingsBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25),
+
+            quitBtn.leadingAnchor.constraint(equalTo: settingsBtn.trailingAnchor, constant: 4),
+            quitBtn.trailingAnchor.constraint(equalTo: buttonBar.trailingAnchor),
+            quitBtn.topAnchor.constraint(equalTo: buttonBar.topAnchor),
+            quitBtn.bottomAnchor.constraint(equalTo: buttonBar.bottomAnchor),
+            quitBtn.widthAnchor.constraint(equalTo: buttonBar.widthAnchor, multiplier: 0.25)
+        ])
     }
 
     // MARK: - Helper Methods (紧凑版本)
@@ -697,6 +738,37 @@ class PopoverViewController: NSViewController {
 
         contentStack.addArrangedSubview(container)
         container.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
+    }
+
+    private func createHorizontalButton(icon: String, title: String, action: Selector) -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.08).cgColor
+        container.layer?.cornerRadius = 6
+
+        let iconLabel = NSTextField(labelWithString: icon)
+        iconLabel.font = NSFont.systemFont(ofSize: 14)
+        iconLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(iconLabel)
+
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = NSFont.systemFont(ofSize: 11, weight: .medium)
+        titleLabel.textColor = Design.textPrimary
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            iconLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            iconLabel.topAnchor.constraint(equalTo: container.topAnchor, constant: 4),
+            titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            titleLabel.topAnchor.constraint(equalTo: iconLabel.bottomAnchor, constant: 2)
+        ])
+
+        let clickGesture = NSClickGestureRecognizer(target: AppDelegate.shared, action: action)
+        container.addGestureRecognizer(clickGesture)
+
+        return container
     }
 
     private func addSeparator() {
