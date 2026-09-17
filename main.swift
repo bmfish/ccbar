@@ -537,6 +537,18 @@ class DonutChartWithLegendView: NSView {
     }
 }
 
+/// 渐变顶部条（品牌色到背景色，提升精致感）
+class GradientHeaderView: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        let startColor = Design.brandColor.withAlphaComponent(0.6)
+        let endColor = Design.brandColor.withAlphaComponent(0.0)
+        if let gradient = NSGradient(starting: startColor, ending: endColor) {
+            gradient.draw(in: bounds, angle: 0)
+        }
+    }
+}
+
 /// 卡片容器视图（带阴影和圆角）
 class CardContainerView: NSView {
     override func draw(_ dirtyRect: NSRect) {
@@ -770,18 +782,23 @@ class PopoverViewController: NSViewController {
         let total = AppDelegate.shared?.queryTotalStats()
         let models = AppDelegate.shared?.queryModelBreakdown()
 
-        // MARK: - 问候语 (适当大小)
+        // MARK: - 渐变顶部条（品牌色 → 背景，提升精致感）
+        let gradientBar = GradientHeaderView()
+        gradientBar.translatesAutoresizingMaskIntoConstraints = false
+        gradientBar.heightAnchor.constraint(equalToConstant: 4).isActive = true
+        contentStack.addArrangedSubview(gradientBar)
+        gradientBar.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: 0).isActive = true
+
+        // MARK: - 问候语
         let greeting = AppDelegate.shared?.greetings.randomElement() ?? "ccBar 用量统计"
         let greetingLabel = NSTextField(labelWithString: greeting)
-        greetingLabel.font = NSFont.systemFont(ofSize: 13, weight: .medium)  // 增大字号
+        greetingLabel.font = NSFont.systemFont(ofSize: 12, weight: .medium)
         greetingLabel.textColor = Design.textSecondary
         greetingLabel.maximumNumberOfLines = 1
         greetingLabel.lineBreakMode = .byTruncatingTail
-        greetingLabel.alignment = .center  // 居中显示
+        greetingLabel.alignment = .center
         contentStack.addArrangedSubview(greetingLabel)
         greetingLabel.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
-
-        addSeparator()
 
         // MARK: - 今日统计卡片
         if let today = today {
@@ -790,15 +807,22 @@ class PopoverViewController: NSViewController {
             contentStack.addArrangedSubview(headerView)
             headerView.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
 
-            // 大数字
-            let bigNumber = NSTextField(labelWithString: Design.formatTokens(today.total))
-            bigNumber.font = NSFont.monospacedDigitSystemFont(ofSize: 24, weight: .bold)
-            // 颜色随用量变化：浅绿 → 黄 → 橙 → 红（按预警阈值为满格）
+            // 大数字（带发光效果）
             let thresholdWan = AppDelegate.shared?.settings.warningThreshold ?? 50
-            bigNumber.textColor = Design.usageColor(total: today.total, thresholdWan: thresholdWan)
+            let usageColor = Design.usageColor(total: today.total, thresholdWan: thresholdWan)
+
+            let bigNumber = NSTextField(labelWithString: Design.formatTokens(today.total))
+            bigNumber.font = NSFont.monospacedDigitSystemFont(ofSize: 32, weight: .bold)
+            bigNumber.textColor = usageColor
+            // 发光阴影
+            let glow = NSShadow()
+            glow.shadowColor = usageColor.withAlphaComponent(0.35)
+            glow.shadowBlurRadius = 16
+            glow.shadowOffset = .zero
+            bigNumber.shadow = glow
             contentStack.addArrangedSubview(bigNumber)
 
-            // 三列统计 - 使用 Auto Layout，增加高度
+            // 三列统计
             let statsRow = NSView()
             statsRow.translatesAutoresizingMaskIntoConstraints = false
             statsRow.heightAnchor.constraint(equalToConstant: 44).isActive = true  // 增加高度
