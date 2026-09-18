@@ -1342,13 +1342,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             self.popover = popover
         }
 
-        // 每次显示时刷新数据，确保与标题一致
-        if let vc = popover?.contentViewController as? PopoverViewController {
-            vc.refresh()
-        }
-
         if let button = statusItem.button {
             popover?.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        }
+
+        // show 之后 loadView 已完成，再刷新数据
+        if let vc = popover?.contentViewController as? PopoverViewController {
+            vc.refresh()
         }
 
         // 添加全局事件监听器
