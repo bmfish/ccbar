@@ -1565,10 +1565,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             models: modelBreakdown
         )
 
-        // 更新标题
+        // 更新标题（统一用 attributedTitle，避免与 flash 动画冲突）
         if let stats = todayStats {
             let totalStr = fmtTitle(stats.total)
-            statusItem.button?.title = totalStr
+            let thresholdWan = settings.warningThreshold
+            let color = Design.usageColor(total: stats.total, thresholdWan: thresholdWan)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: color,
+                .font: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+            ]
+            statusItem.button?.attributedTitle = NSAttributedString(string: totalStr, attributes: attrs)
 
             // 检查预警
             checkWarning(stats: stats)
@@ -1950,14 +1956,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func flashTitle() {
         guard let button = statusItem.button else { return }
 
-        let originalTitle = button.title
+        // 读取当前显示的文字
+        let currentText = button.attributedTitle.string.isEmpty
+            ? button.title
+            : button.attributedTitle.string
 
         // 闪烁为品牌色 + 加一个 ✨
         let attrs: [NSAttributedString.Key: Any] = [
             .foregroundColor: Design.brandColor,
             .font: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .bold)
         ]
-        button.attributedTitle = NSAttributedString(string: "✨ " + originalTitle, attributes: attrs)
+        button.attributedTitle = NSAttributedString(string: "✨ " + currentText, attributes: attrs)
 
         // 0.6 秒后恢复
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
@@ -1972,7 +1981,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 ]
                 button.attributedTitle = NSAttributedString(string: self.fmtTitle(stats.total), attributes: normalAttrs)
             } else {
-                button.attributedTitle = NSAttributedString(string: originalTitle)
+                let fallback: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: Design.textPrimary,
+                    .font: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+                ]
+                button.attributedTitle = NSAttributedString(string: currentText, attributes: fallback)
             }
         }
     }
@@ -2042,7 +2055,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         // 更新标题
         if let stats = todayStats {
             let totalStr = fmtTitle(stats.total)
-            statusItem.button?.title = totalStr
+            let thresholdWan = settings.warningThreshold
+            let color = Design.usageColor(total: stats.total, thresholdWan: thresholdWan)
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: color,
+                .font: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+            ]
+            statusItem.button?.attributedTitle = NSAttributedString(string: totalStr, attributes: attrs)
         }
 
         // 更新 popover
