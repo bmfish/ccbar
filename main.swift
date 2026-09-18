@@ -1262,6 +1262,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     var lastNotificationDate: Date?
     var currentHourlyDate: Date?
 
+    // MARK: - 里程碑动画
+    /// 上次触发冒泡的 token 档位（每 1000万 一档）
+    var lastTokenTier: Int = 0
+    /// 冒泡窗口池（避免窗口被提前释放）
+    var bubbleWindows: [NSWindow] = []
+
     // 随机问候语
     let greetings = [
         "今天也要加油写 Bug 哦 ✨",
@@ -1559,6 +1565,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
             // 检查预警
             checkWarning(stats: stats)
+
+            // 检查里程碑（每1000万冒泡 + 闪标题）
+            checkTokenMilestone(stats.total)
         } else {
             statusItem.button?.title = "未找到"
         }
@@ -1838,6 +1847,127 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         notification.soundName = NSUserNotificationDefaultSoundName
 
         NSUserNotificationCenter.default.deliver(notification)
+    }
+
+    // MARK: - 里程碑动画（每1000万冒泡 + 闪标题）
+
+    /// 每1000万 token 为一档，跨档时触发动画
+    func checkTokenMilestone(_ total: Int64) {
+        let tier = Int(total / 10_000_000)  // 每1000万一档
+        guard tier > lastTokenTier, tier > 0 else { return }
+        lastTokenTier = tier
+
+        // 计算增量（跨了几档就显示多少）
+        let deltaTokens = total % 10_000_000 == 0 ? 10_000_000 : total - Int64(tier - 1) * 10_000_000
+
+        // 触发冒泡
+        showBubble(delta: deltaTokens)
+
+        // 触发标题闪烁
+        flashTitle()
+    }
+
+    /// 状态栏附近弹出 "🫧 +X万" 泡泡，上升并淡出
+    func showBubble(delta: Int64) {
+        guard let button = statusItem.button, let window = button.window else { return }
+
+        // 泡泡内容
+        let text = "🫧 +\(fmtK(delta))"
+
+        // 创建临时窗口
+        let bubbleW: CGFloat = 100
+        let bubbleH: CGFloat = 32
+        let bubble = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: bubbleW, height: bubbleH),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: true
+        )
+        bubble.isOpaque = false
+        bubble.backgroundColor = .clear
+        bubble.hasShadow = false
+        bubble.ignoresMouseEvents = true
+        bubble.level = .floating
+
+        // 泡泡视图
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.systemFont(ofSize: 14, weight: .bold)
+        label.textColor = Design.brandColor
+        label.alignment = .center
+        label.frame = NSRect(x: 0, y: 0, width: bubbleW, height: bubbleH)
+
+        // 背景胶囊
+        let bg = NSView(frame: NSRect(x: 0, y: 0, width: bubbleW, height: bubbleH))
+        bg.wantsLayer = true
+        bg.layer?.backgroundColor = Design.brandColor.withAlphaComponent(0.18).cgColor
+        bg.layer?.cornerRadius = bubbleH / 2
+
+        bg.addSubview(label)
+        bubble.contentView = bg
+
+        // 定位在状态栏按钮上方
+        let btnFrame = window.frame
+        bubble.setFrameOrigin(NSPoint(
+            x: btnFrame.midX - bubbleW / 2,
+            y: btnFrame.minY - bubbleH - 8
+        ))
+        bubble.alphaValue = 0
+        bubble.orderFrontRegardless()
+
+        bubbleWindows.append(bubble)
+
+        // 动画：上升 + 淡入 → 持留 → 淡出
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.3
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            bubble.animator().alphaValue = 1
+            let frame = bubble.frame
+            bubble.animator().setFrameOrigin(NSPoint(x: frame.origin.x, y: frame.origin.y - 30))
+        }, completionHandler: { [weak self] in
+            // 持留 0.8 秒后淡出
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                NSAnimationContext.runAnimationGroup({ ctx in
+                    ctx.duration = 0.5
+                    bubble.animator().alphaValue = 0
+                    let frame = bubble.frame
+                    bubble.animator().setFrameOrigin(NSPoint(x: frame.origin.x, y: frame.origin.y - 20))
+                }, completionHandler: { [weak self] in
+                    bubble.orderOut(nil)
+                    self?.bubbleWindows.removeAll { $0 === bubble }
+                })
+            }
+        })
+    }
+
+    /// 标题短暂闪烁（品牌色 → 回归正常）
+    func flashTitle() {
+        guard let button = statusItem.button else { return }
+
+        let originalTitle = button.title
+
+        // 闪烁为品牌色 + 加一个 ✨
+        let attrs: [NSAttributedString.Key: Any] = [
+            .foregroundColor: Design.brandColor,
+            .font: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .bold)
+        ]
+        button.attributedTitle = NSAttributedString(string: "✨ " + originalTitle, attributes: attrs)
+
+        // 0.6 秒后恢复
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let self = self else { return }
+            let thresholdWan = self.settings.warningThreshold
+            // 恢复时用正常颜色（跟随用量色阶）
+            if let stats = DataCache.shared.getCachedToday() {
+                let color = Design.usageColor(total: stats.total, thresholdWan: thresholdWan)
+                let normalAttrs: [NSAttributedString.Key: Any] = [
+                    .foregroundColor: color,
+                    .font: NSFont.monospacedSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+                ]
+                button.attributedTitle = NSAttributedString(string: self.fmtTitle(stats.total), attributes: normalAttrs)
+            } else {
+                button.attributedTitle = NSAttributedString(string: originalTitle)
+            }
+        }
     }
 
     func updateIcon() {
