@@ -765,8 +765,10 @@ class PopoverViewController: NSViewController {
         ])
 
         self.view = mainView
+    }
 
-        // 构建内容
+    /// 刷新内容（每次显示时调用，确保数据一致）
+    func refresh() {
         buildContent()
     }
 
@@ -1332,12 +1334,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     func showPopover() {
         if popover == nil {
             let popover = NSPopover()
-            popover.contentSize = NSSize(width: 300, height: 420)  // 适配更高的模型栏
-            popover.behavior = .applicationDefined  // 改用手动控制
+            popover.contentSize = NSSize(width: 300, height: 420)
+            popover.behavior = .applicationDefined
             popover.animates = true
             popover.delegate = self
             popover.contentViewController = PopoverViewController()
             self.popover = popover
+        }
+
+        // 每次显示时刷新数据，确保与标题一致
+        if let vc = popover?.contentViewController as? PopoverViewController {
+            vc.refresh()
         }
 
         if let button = statusItem.button {
@@ -2056,15 +2063,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     // 格式化标题（亿保留4位小数）
     func fmtTitle(_ n: Int64) -> String {
-        if n >= 100_000_000 {
-            let d = Double(n) / 100_000_000
-            return String(format: "%.4f亿", d)
-        } else if n >= 10_000 {
-            let w = n / 10_000
-            return "\(w)万"
-        } else {
-            return "\(n)"
-        }
+        return Design.formatTokens(n)
     }
 
     // 格式化总量（亿，无小数）
